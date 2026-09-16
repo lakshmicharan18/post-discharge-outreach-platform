@@ -1,6 +1,6 @@
 # Multi-Hospital Post-Discharge Outreach Platform
 
-Milestones 1–3 implement the multi-tenant foundation, JWT/RBAC, structured healthcare data, hospital operational configuration, and discharge ingestion. All demo records are synthetic. Campaigns, eligibility, queues, AI, telephony, and dashboards remain deferred.
+Milestones 1–5B implement the multi-tenant foundation, JWT/RBAC, structured healthcare data, hospital configuration and ingestion, campaigns and eligibility, durable outreach work, and atomic queue reservations. All demo records are synthetic. AI, telephony, worker execution, retry execution, callbacks, and dashboards remain deferred.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ Requests flow through route → service → repository → PostgreSQL. UUID keys
 
 Authentication uses Argon2id (`pwdlib`) and signed, expiring JWTs (`PyJWT`). Each protected request validates the token and reloads the user's active status, role, and hospital from the database. `X-Dev-User-ID`, `X-Role`, and `X-Hospital-ID` cannot authenticate or change scope. The former development identity path is removed. Details: [authentication](docs/authentication.md), [tenant architecture](docs/architecture.md).
 
-The healthcare layer separates Patient, Encounter, Discharge, Condition, Observation, Medication, CarePlan, and Procedure. **This prototype uses a simplified FHIR-like domain model and does not claim full FHIR compliance.** Configuration, relationships, import schemas, idempotency, CSV format, transaction boundaries, timeline behavior, campaign lifecycle, dynamic eligibility, and limitations are documented in [healthcare data and ingestion](docs/healthcare-data.md) and [campaign eligibility](docs/campaign-eligibility.md).
+The healthcare layer separates Patient, Encounter, Discharge, Condition, Observation, Medication, CarePlan, and Procedure. **This prototype uses a simplified FHIR-like domain model and does not claim full FHIR compliance.** Configuration, relationships, import schemas, idempotency, CSV format, transaction boundaries, timeline behavior, campaign lifecycle, dynamic eligibility, and limitations are documented in [healthcare data and ingestion](docs/healthcare-data.md), [campaign eligibility](docs/campaign-eligibility.md), and [queue design](docs/queue-design.md).
 
 ## Roles and tenant isolation
 
@@ -216,6 +216,6 @@ uv run python ../scripts/smoke_auth.py
 
 This checks all seven demo logins, tenant and platform boundaries, session-cookie attributes, same-origin enforcement, and logout. It expects local HTTP cookies (`SESSION_COOKIE_SECURE=false`). For Milestone 3 live verification run `uv run python ../scripts/smoke_m3.py`; it checks configuration, partial/idempotent import, timeline/context, the authenticated proxy, and all new pages.
 
-[Verification results](docs/verification.md) record actual executed checks. An import example is available at [docs/example-discharge-import.json](docs/example-discharge-import.json). Refresh tokens, MFA, password reset/invitations, login throttling, server-side logout revocation, terminology validation, and production deployment hardening remain outside this prototype milestone. No queue, AI, telephony, mock-EHR sync, or dashboard workflows were added.
+[Verification results](docs/verification.md) record actual executed checks. An import example is available at [docs/example-discharge-import.json](docs/example-discharge-import.json). Refresh tokens, MFA, password reset/invitations, login throttling, server-side logout revocation, terminology validation, and production deployment hardening remain outside this prototype milestone. AI, telephony, mock-EHR sync, and dashboard workflows were not added.
 
-Campaign activation currently validates configuration and evaluates dynamic eligibility only. It does not create or schedule outbound work; queue creation and scheduling are implemented in Milestone 5.
+Campaign start and resume evaluate eligibility and create missing durable tasks transactionally. Hospital administrators and campaign managers can reserve due tasks using `POST /api/v1/queue/reserve-next` or `POST /api/v1/queue/reserve-available?limit=N`; `GET /api/v1/queue/status` exposes tenant-scoped operational counts. Reservation capacity and lease behavior are documented in [queue design](docs/queue-design.md).

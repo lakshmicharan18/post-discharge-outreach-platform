@@ -29,6 +29,9 @@ class OutreachTaskResponse(BaseModel):
     last_outcome: str | None
     last_error_code: str | None
     manual_follow_up_required: bool
+    reserved_at: datetime | None
+    reservation_token: UUID | None
+    reservation_expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -40,3 +43,13 @@ class OutreachWorkCreationSummary(BaseModel):
     created: int
     already_existing: int
     ineligible: int
+
+
+class QueueStatusResponse(BaseModel):
+    effective_capacity: int
+    active_reserved_count: int
+    available_capacity: int
+    pending_count: int
+    oldest_pending_at: datetime | None
+    approaching_deadline_count: int
+    deadline_missed_count: int

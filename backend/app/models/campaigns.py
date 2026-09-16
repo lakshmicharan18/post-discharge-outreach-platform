@@ -126,3 +126,8 @@ class OutreachTask(Identity, Tenant, Timestamps, Base):
     last_outcome: Mapped[str | None] = mapped_column(String(50))
     last_error_code: Mapped[str | None] = mapped_column(String(100))
     manual_follow_up_required: Mapped[bool] = mapped_column(default=False)
+    reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reservation_token: Mapped[UUID | None] = mapped_column(index=True)
+    reservation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
