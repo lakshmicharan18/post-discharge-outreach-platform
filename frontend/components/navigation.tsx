@@ -25,6 +25,7 @@ export function Navigation() {
     <Link href="/">Home</Link>
     <Link href="/patients">Patients</Link>
     {user?.role && user.role !== "PLATFORM_ADMIN" && <Link href="/campaigns">Campaigns</Link>}
+    {user?.role && user.role !== "PLATFORM_ADMIN" && <Link href="/queue">Queue</Link>}
     <Link href="/configuration">Configuration</Link>
     <Link href="/import">Import</Link>
     <button onClick={logout} disabled={pending}>{pending ? "Signing out…" : "Sign out"}</button>

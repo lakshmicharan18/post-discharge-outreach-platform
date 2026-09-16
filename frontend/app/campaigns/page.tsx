@@ -71,7 +71,7 @@ export default function CampaignsPage() {
   }
 
   return <main><Navigation /><p className="eyebrow">CAMPAIGN OPERATIONS</p><h1>Campaigns</h1>
-    <p>Campaign activation validates configuration and evaluates current eligibility. It does not create outbound work yet.</p>
+    <p>Campaign start and resume create eligible outreach work. Queue reservations are visible in Queue operations.</p>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     <section><h2>Your hospital campaigns</h2>{loading && <p role="status">Loading campaigns…</p>}
       {!loading && !error && campaigns.length === 0 && <p>No campaigns have been created for this hospital.</p>}

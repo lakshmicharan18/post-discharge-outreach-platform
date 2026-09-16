@@ -21,3 +21,11 @@ Expired clinical deadlines are never selected or discarded. They remain `PENDING
 `POST /api/v1/queue/reserve-next` reserves one task and may return `null` when no capacity or eligible work exists. `POST /api/v1/queue/reserve-available?limit=N` reserves up to `N` tasks. `GET /api/v1/queue/status` returns hospital-scoped active, available, pending, deadline, and oldest-pending indicators. Only hospital administrators and campaign managers may reserve work; clinical reviewers may inspect status. All three operations require a clinical tenant context, so platform administrators never receive clinical queue access by default.
 
 Milestone 6 will add call execution, terminal outcomes, retry/backoff and callback scheduling, worker heartbeats and crash recovery, and any workflow that consumes or releases capacity after a call begins.
+
+## Queue operations UI
+
+`/queue` uses the authenticated frontend proxy to show tenant-scoped queue status, campaign task lists, and patient names. It displays configured and available capacity, active reservations, pending and scheduled work, oldest pending work, deadline pressure, and backend-provided priority components. Reservation tokens and lease expiry values are not displayed.
+
+Hospital administrators and campaign managers can use **Reserve next** and **Fill available capacity** as a prototype demonstration of the existing reservation API. Clinical reviewers have read-only visibility. The backend remains the RBAC authority. The campaign detail page includes a compact task-state summary and link to queue operations.
+
+Milestone 5 schedules and reserves outreach work but does not execute calls. Milestone 6 retains responsibility for call execution, outcomes, retries, callbacks, maximum-retry/manual follow-up, worker crash recovery, and queue simulation.
