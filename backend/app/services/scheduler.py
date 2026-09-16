@@ -175,7 +175,13 @@ class QueueSchedulerService:
             .join(Encounter, Discharge.encounter_id == Encounter.id)
             .where(
                 OutreachTask.hospital_id == self.hospital_id,
-                OutreachTask.state == OutreachTaskState.PENDING,
+                OutreachTask.state.in_(
+                    (
+                        OutreachTaskState.PENDING,
+                        OutreachTaskState.RETRY_SCHEDULED,
+                        OutreachTaskState.CALLBACK_SCHEDULED,
+                    )
+                ),
                 OutreachTask.next_eligible_at <= now,
                 OutreachTask.clinical_deadline > now,
                 OutreachTask.manual_follow_up_required.is_(False),

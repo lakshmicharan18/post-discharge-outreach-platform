@@ -48,6 +48,23 @@ class OutreachTaskState(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class OutreachOutcome(str, enum.Enum):
+    COMPLETED = "COMPLETED"
+    NO_ANSWER = "NO_ANSWER"
+    BUSY = "BUSY"
+    VOICEMAIL = "VOICEMAIL"
+    DROPPED = "DROPPED"
+    INVALID_NUMBER = "INVALID_NUMBER"
+    DECLINED = "DECLINED"
+    CALLBACK_REQUESTED = "CALLBACK_REQUESTED"
+    TECHNICAL_FAILURE = "TECHNICAL_FAILURE"
+
+
+class ManualFollowUpStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+
+
 class Campaign(Identity, Tenant, Timestamps, Base):
     __tablename__ = "campaigns"
     __table_args__ = (
@@ -131,3 +148,50 @@ class OutreachTask(Identity, Tenant, Timestamps, Base):
     reservation_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
     )
+
+
+class OutreachAttempt(Identity, Tenant, Timestamps, Base):
+    __tablename__ = "outreach_attempts"
+    __table_args__ = (
+        UniqueConstraint("hospital_id", "outcome_event_id"),
+        UniqueConstraint("outreach_task_id", "attempt_number"),
+        Index(
+            "ix_outreach_attempts_hospital_outcome_started", "hospital_id", "outcome", "started_at"
+        ),
+    )
+    campaign_id: Mapped[UUID] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    outreach_task_id: Mapped[UUID] = mapped_column(ForeignKey("outreach_tasks.id"), index=True)
+    patient_id: Mapped[UUID] = mapped_column(ForeignKey("patients.id"), index=True)
+    discharge_id: Mapped[UUID] = mapped_column(ForeignKey("discharges.id"), index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    outcome: Mapped[OutreachOutcome | None] = mapped_column(
+        Enum(OutreachOutcome, name="outreach_outcome"), index=True
+    )
+    outcome_reason: Mapped[str | None] = mapped_column(String(100))
+    provider_call_id: Mapped[str | None] = mapped_column(String(150))
+    outcome_event_id: Mapped[str | None] = mapped_column(String(150))
+    callback_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    technical_error_code: Mapped[str | None] = mapped_column(String(100))
+    partial_context: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class ManualFollowUp(Identity, Tenant, Timestamps, Base):
+    __tablename__ = "manual_follow_ups"
+    __table_args__ = (
+        UniqueConstraint("outreach_task_id"),
+        Index(
+            "ix_manual_follow_ups_hospital_status_reason", "hospital_id", "status", "reason_code"
+        ),
+    )
+    patient_id: Mapped[UUID] = mapped_column(ForeignKey("patients.id"), index=True)
+    campaign_id: Mapped[UUID] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    outreach_task_id: Mapped[UUID] = mapped_column(ForeignKey("outreach_tasks.id"), index=True)
+    reason_code: Mapped[str] = mapped_column(String(100), index=True)
+    status: Mapped[ManualFollowUpStatus] = mapped_column(
+        Enum(ManualFollowUpStatus, name="manual_follow_up_status"),
+        default=ManualFollowUpStatus.OPEN,
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

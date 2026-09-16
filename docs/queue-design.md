@@ -29,3 +29,13 @@ Milestone 6 will add call execution, terminal outcomes, retry/backoff and callba
 Hospital administrators and campaign managers can use **Reserve next** and **Fill available capacity** as a prototype demonstration of the existing reservation API. Clinical reviewers have read-only visibility. The backend remains the RBAC authority. The campaign detail page includes a compact task-state summary and link to queue operations.
 
 Milestone 5 schedules and reserves outreach work but does not execute calls. Milestone 6 retains responsibility for call execution, outcomes, retries, callbacks, maximum-retry/manual follow-up, worker crash recovery, and queue simulation.
+
+## Milestone 6A outcomes
+
+Each started call creates an `OutreachAttempt`, scoped to the hospital and linked to the outreach task, campaign, patient, and discharge. An outcome event key is unique per hospital, so duplicate delivery returns the already-processed task without creating another attempt, retry, manual follow-up, or audit event. `ManualFollowUp` is a one-per-outreach-task operational record.
+
+A scheduled task may move to `CALLING`. `COMPLETED` and `DECLINED` end in `COMPLETED`. `NO_ANSWER`, `BUSY`, `VOICEMAIL`, `DROPPED`, and `TECHNICAL_FAILURE` move to `RETRY_SCHEDULED` when an attempt remains; otherwise they become `MANUAL_FOLLOW_UP`. `INVALID_NUMBER` becomes manual follow-up immediately. `CALLBACK_REQUESTED` requires a future callback time and becomes `CALLBACK_SCHEDULED`, never a generic retry. Dropped attempts retain only safe structured partial context.
+
+Retry delay is `retry_initial_delay_minutes * retry_backoff_multiplier^(attempt_count - 1)`. The result is adjusted into the intersection of hospital and campaign calling windows in the hospital timezone. If that window does not exist or cannot occur before the clinical deadline, automatic outreach stops and a manual follow-up is created. The scheduler may reserve due `RETRY_SCHEDULED` and `CALLBACK_SCHEDULED` tasks using its existing atomic reservation path.
+
+Milestone 6A does not run workers, simulate calls, recover stale `CALLING`/`CONNECTED` tasks, deliver notifications, connect telephony, or perform AI conversation or clinical triage.
