@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CurrentUser } from "../lib/auth";
+import { Navigation } from "../components/navigation";
 
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
   const refresh = useCallback(async () => {
     try {
       const response = await fetch("/api/auth/me", { cache: "no-store" });
@@ -33,19 +33,6 @@ export default function Home() {
     return () => { window.removeEventListener("focus", refresh); window.clearInterval(timer); };
   }, [refresh]);
 
-  async function logout() {
-    setPending(true);
-    try {
-      const response = await fetch("/api/auth/logout", { method: "POST" });
-      if (!response.ok) throw new Error("Logout failed");
-      setUser(null);
-      router.replace("/login");
-      router.refresh();
-    } catch {
-      setError("Could not sign out. Please retry.");
-    } finally { setPending(false); }
-  }
-
   return <main>
     <p className="eyebrow">MULTI-HOSPITAL OPERATIONS</p>
     <h1>Post-Discharge Outreach Platform</h1>
@@ -56,8 +43,8 @@ export default function Home() {
       <p>{user.email}</p>
       <p>Role: <strong>{user.role}</strong></p>
       <p>Hospital: <strong>{user.hospital?.name ?? "Platform administration"}</strong></p>
-      <button onClick={logout} disabled={pending}>{pending ? "Signing out…" : "Sign out"}</button>
     </section>}
+    {user && <><Navigation /><section><h2>Milestone 3</h2><p>Review hospital configuration, browse structured patient context, or import discharge data.</p></section></>}
     <footer>Prototype · Use synthetic data only</footer>
   </main>;
 }

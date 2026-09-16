@@ -51,6 +51,12 @@ async def test_platform_metadata_is_separate(client):
         json={"name": "Hospital C", "code": "C", "timezone": "Asia/Kolkata"},
     )
     assert response.status_code == 201
+    configuration = await client.get(
+        f"/api/v1/platform/hospitals/{response.json()['id']}/configuration",
+        headers=auth_headers(99),
+    )
+    assert configuration.status_code == 200
+    assert configuration.json()["timezone"] == "Asia/Kolkata"
 
 
 @pytest.mark.parametrize(

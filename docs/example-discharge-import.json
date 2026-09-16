@@ -1,0 +1,81 @@
+{
+  "source": "synthetic-example-v1",
+  "records": [
+    {
+      "patient": {
+        "external_patient_id": "SYN-EXAMPLE-001",
+        "first_name": "Synthetic",
+        "last_name": "Example",
+        "date_of_birth": "1975-04-12",
+        "phone": "+12025550155",
+        "preferred_language": "en",
+        "communication_preferences": { "voice": true, "sms": false }
+      },
+      "encounter": {
+        "external_encounter_id": "SYN-ENC-001",
+        "care_setting": "INPATIENT",
+        "admit_at": "2026-09-10T08:00:00Z",
+        "discharge_at": "2026-09-12T14:00:00Z",
+        "status": "DISCHARGED"
+      },
+      "discharge": {
+        "discharge_at": "2026-09-12T14:00:00Z",
+        "follow_up_window_hours": 72,
+        "disposition": "HOME",
+        "risk_level": "MEDIUM",
+        "risk_indicators": ["multiple_medications"],
+        "discharge_instructions": "Synthetic example instructions for prototype use only.",
+        "communication_eligible": true,
+        "source_reference": "SYN-DISCHARGE-001"
+      },
+      "conditions": [
+        {
+          "external_id": "SYN-COND-001",
+          "code": "I10",
+          "display_name": "Hypertension",
+          "clinical_status": "ACTIVE"
+        }
+      ],
+      "observations": [
+        {
+          "external_id": "SYN-OBS-001",
+          "code": "8867-4",
+          "display_name": "Heart rate",
+          "value": 72,
+          "unit": "beats/min",
+          "value_type": "INTEGER",
+          "observed_at": "2026-09-12T12:00:00Z",
+          "source": "SYNTHETIC_IMPORT"
+        }
+      ],
+      "medications": [
+        {
+          "external_id": "SYN-MED-001",
+          "medication_name": "Synthetic Medication",
+          "dose": "5 mg",
+          "route": "oral",
+          "frequency": "once daily",
+          "status": "ACTIVE"
+        }
+      ],
+      "care_plans": [
+        {
+          "external_id": "SYN-PLAN-001",
+          "title": "Synthetic follow-up plan",
+          "description": "Prototype plan.",
+          "status": "ACTIVE",
+          "follow_up_instructions": "Contact within 72 hours."
+        }
+      ],
+      "procedures": [
+        {
+          "external_id": "SYN-PROC-001",
+          "code": "SYN-PROC",
+          "name": "Synthetic diagnostic procedure",
+          "performed_at": "2026-09-12T10:00:00Z",
+          "status": "COMPLETED"
+        }
+      ]
+    }
+  ]
+}

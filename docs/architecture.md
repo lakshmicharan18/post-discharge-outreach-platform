@@ -11,6 +11,8 @@ Database constraints provide an additional relationship boundary:
 - `encounters(hospital_id, patient_id, id)` is a unique target for discharges.
 - `discharges(hospital_id, patient_id, encounter_id)` references that complete encounter key.
 - Users have a hospital exactly when their role is not PLATFORM_ADMIN.
+- Conditions, observations, medications, care plans, and procedures use composite
+  hospital/patient/encounter foreign keys and tenant-scoped external identifiers.
 
 The shared database uses application-enforced row filtering, not PostgreSQL row-level security. Raw SQL/database credentials bypass read filtering, so clinical application code must use scoped repositories. Foreign keys protect relationships even when writes bypass services. Future jobs must carry explicit tenant context and reuse these boundaries.
 
@@ -20,4 +22,4 @@ Pydantic rejects unknown input fields and validates timezone offsets, chronologi
 
 Alembic owns schema creation. ORM defaults assign UUIDs, statuses, and initial preferences; timestamps are initialized by PostgreSQL. `updated_at` changes on SQLAlchemy updates, not arbitrary external SQL. External identifiers are unique within each hospital and may repeat across hospitals.
 
-The Next.js login/session page contains no clinical records. All data authorization remains in the backend. No future workflow is implemented in the reserved packages.
+The Next.js pages display clinical data only through the authenticated backend proxy. All data authorization remains in FastAPI services and repositories. See [healthcare data and ingestion](healthcare-data.md) for Milestone 3 boundaries. No campaign, queue, AI, telephony, or dashboard workflow is implemented in the reserved packages.

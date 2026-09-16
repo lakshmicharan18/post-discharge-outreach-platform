@@ -96,7 +96,7 @@ class Patient(Identity, Tenant, Timestamps, Base):
     communication_preferences: Mapped[dict[str, bool]] = mapped_column(JSONB, default=dict)
 
 
-class Encounter(Identity, Tenant, Base):
+class Encounter(Identity, Tenant, Timestamps, Base):
     __tablename__ = "encounters"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -118,7 +118,7 @@ class Encounter(Identity, Tenant, Base):
     status: Mapped[str] = mapped_column(String(30), default="ADMITTED")
 
 
-class Discharge(Identity, Tenant, Base):
+class Discharge(Identity, Tenant, Timestamps, Base):
     __tablename__ = "discharges"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -129,16 +129,22 @@ class Discharge(Identity, Tenant, Base):
             ["encounters.hospital_id", "encounters.patient_id", "encounters.id"],
         ),
         UniqueConstraint("hospital_id", "encounter_id"),
+        UniqueConstraint("hospital_id", "source_reference"),
         CheckConstraint("follow_up_deadline >= discharge_at", name="chronology"),
         CheckConstraint("risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'UNKNOWN')", name="risk_level"),
         CheckConstraint("status IN ('PENDING', 'COMPLETED', 'CANCELLED')", name="status"),
     )
     patient_id: Mapped[UUID] = mapped_column(index=True)
     encounter_id: Mapped[UUID] = mapped_column(index=True)
-    discharge_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    follow_up_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    risk_level: Mapped[str] = mapped_column(String(20), default="UNKNOWN")
+    discharge_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    follow_up_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    follow_up_window_hours: Mapped[int] = mapped_column(default=72)
+    disposition: Mapped[str] = mapped_column(String(50), default="HOME")
+    risk_level: Mapped[str] = mapped_column(String(20), default="UNKNOWN", index=True)
+    risk_indicators: Mapped[list[str]] = mapped_column(JSONB, default=list)
     discharge_instructions: Mapped[str] = mapped_column(Text)
+    communication_eligible: Mapped[bool] = mapped_column(Boolean, default=True)
+    source_reference: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(30), default="PENDING")
 
 

@@ -188,3 +188,17 @@ async def test_valid_encounter_and_discharge_creation(client):
     )
     assert response.status_code == 201
     assert response.json()["hospital_id"] == str(uid(1))
+    assert response.json()["follow_up_window_hours"] == 24
+    mismatch = await client.post(
+        "/api/v1/discharges",
+        headers=headers(),
+        json={
+            "patient_id": str(uid(102)),
+            "encounter_id": response.json()["encounter_id"],
+            "discharge_at": "2026-01-02T00:00:00Z",
+            "follow_up_deadline": "2026-01-03T00:00:00Z",
+            "follow_up_window_hours": 72,
+            "discharge_instructions": "Synthetic",
+        },
+    )
+    assert mismatch.status_code == 422

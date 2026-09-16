@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import RequestContext
 from app.models.entities import Hospital
+from app.models.healthcare import HospitalConfiguration
 from app.repositories.platform import HospitalRepository
 from app.schemas.entities import HospitalCreate
 
@@ -17,6 +18,9 @@ class HospitalService:
     async def create(self, payload: HospitalCreate) -> Hospital:
         try:
             hospital = await self.repository.create(payload.model_dump())
+            self.session.add(
+                HospitalConfiguration(hospital_id=hospital.id, timezone=hospital.timezone)
+            )
             await self.session.commit()
             return hospital
         except Exception:

@@ -22,6 +22,7 @@ from app.core.database import get_session  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.entities import Discharge, Encounter, Hospital, Patient, Role, User  # noqa: E402
+from app.models.healthcare import HospitalConfiguration  # noqa: E402
 
 
 def uid(number: int) -> UUID:
@@ -51,6 +52,14 @@ async def session() -> AsyncIterator[AsyncSession]:
             for tenant in (1, 2):
                 session.add(Hospital(id=uid(tenant), name=f"Hospital {tenant}", code=f"H{tenant}"))
             await session.flush()
+            for tenant in (1, 2):
+                session.add(
+                    HospitalConfiguration(
+                        id=uid(tenant + 500),
+                        hospital_id=uid(tenant),
+                        timezone="UTC",
+                    )
+                )
             for tenant in (1, 2):
                 session.add(
                     User(

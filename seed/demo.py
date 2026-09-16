@@ -16,6 +16,7 @@ from app.core.config import get_settings  # noqa: E402
 from app.core.database import SessionFactory, engine  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.models.entities import Discharge, Encounter, Hospital, Patient, Role, User  # noqa: E402
+from app.models.healthcare import HospitalConfiguration  # noqa: E402
 
 DEMO_PASSWORD = "DemoOnly-ChangeMe-2026!"
 
@@ -41,6 +42,24 @@ async def seed() -> None:
                 )
                 session.add(hospital)
                 await session.flush()
+            configuration = await session.scalar(
+                select(HospitalConfiguration).where(
+                    HospitalConfiguration.hospital_id == hospital.id
+                )
+            )
+            if configuration is None:
+                session.add(
+                    HospitalConfiguration(
+                        hospital_id=hospital.id,
+                        timezone=hospital.timezone,
+                        notification_preferences={"import_failures": True},
+                        escalation_contacts=[
+                            {"name": "Synthetic Review Desk", "channel": "internal"}
+                        ],
+                        ehr_settings={"provider": "mock", "enabled": False},
+                        is_ready=True,
+                    )
+                )
             for index, role in enumerate(
                 (Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER, Role.CLINICAL_REVIEWER)
             ):

@@ -1,35 +1,58 @@
-# Milestone 2 verification
+# Milestone 3 verification
 
 Verified on 2026-09-16 with Python 3.13, PostgreSQL 14.24, Node.js 20.20.2, and Next.js 16.3.5.
 
 | Check | Result |
 | --- | --- |
-| Full PostgreSQL-backed backend suite | **113 passed** (38 adapted Milestone 1 cases + 75 auth/RBAC cases) |
+| Full PostgreSQL-backed backend suite | **156 passed** |
+| Milestone 1–2 regression suite | All prior **113** tests passed in the full run |
+| Milestone 3 coverage | **43** configuration, healthcare, ingestion, timeline, CSV, audit, and isolation tests passed |
 | Alembic upgrade | Passed on working and test databases |
-| Populated Milestone 1 upgrade | Legacy user preserved; password remains null/unprovisioned |
-| Milestone 2 downgrade and re-upgrade | Passed on a separate disposable database |
+| Populated Milestone 2 → 3 upgrade | Passed with existing legacy user/data |
+| Milestone 3 downgrade and re-upgrade | Passed on a separate disposable database |
 | Alembic model/schema check | No new upgrade operations detected |
-| Seed idempotency | Two hospitals, seven users, six patients/encounters/discharges; existing hashes unchanged |
-| Ruff lint/format and git whitespace check | Passed |
-| Frontend TypeScript and production build | Passed |
-| Live API | All seven demo accounts logged in; identity/tenant/role boundaries passed |
-| Live frontend session | Login, HttpOnly/SameSite cookie, current user, logout, Origin rejection passed |
-| Expired browser session | Rejected with 401; cookie cleared |
-| Docker Compose configuration | Standalone Compose validation passed |
+| Deterministic generator | 240/240 imported across two hospitals |
+| Generator rerun | Same two import IDs; table counts unchanged |
+| Dataset after demo + generator | 246 patients/encounters/discharges, 240 each conditions/observations/medications/care plans, 120 procedures |
+| Ruff lint/format | Passed |
+| Frontend TypeScript and production build | Passed; 10 routes generated |
+| Live Milestone 3 smoke | Configuration, partial/idempotent import, safe errors, context/timeline, pages, and authenticated proxy passed |
+| Docker Compose configuration | Standalone Compose v2.29.7 validation passed; runtime unavailable |
 
-The original Milestone 1 migration is unchanged. Existing tenant/data tests now use signed bearer tokens through the actual authentication dependency. The removed development identity is tested for rejection. New coverage includes malformed/expired/incorrectly signed tokens, algorithm/issuer/audience restrictions, disabled and unprovisioned accounts, refreshed database roles, role-specific clinical reads/writes, user administration, password hashing, credential redaction, case-insensitive uniqueness, and platform clinical restrictions.
+The original Milestone 1 and Milestone 2 migrations are unchanged. Migration `10c82d1fbab4` was applied to a database already at Milestone 2, downgraded back to `2a0000000001`, reapplied, and checked against SQLAlchemy metadata. Existing hospitals received default configuration rows during migration.
 
-Two issues found during verification were fixed: refreshing identity state after a stored role change, and Next.js internal hostname normalization causing valid local Origin checks to fail. The backend suite and frontend build/live session checks passed after the fixes.
+The full tests use actual PostgreSQL, signed bearer tokens, tenant-scoped repositories, and per-test savepoints. New coverage includes:
 
-The backend and frontend were started on loopback ports 8000 and 3000. The workspace's ignored `.env` points to the local temporary PostgreSQL instance on port 55432 and contains a generated signing key. That key is not committed or printed. PostgreSQL uses a temporary loopback trust-authenticated instance under `/tmp/outreach-pg-data`; the distributed Compose setup requires a password.
+- hospital-admin configuration updates and data-minimized audit events;
+- platform configuration access without clinical access;
+- all five healthcare resources, both nested and direct UUID reads;
+- Hospital A/B isolation for every new resource and patient timeline;
+- JSON and CSV imports, partial success, graph rollback, and validation errors;
+- batch digest, patient/encounter/resource upserts, and duplicate prevention;
+- client-supplied hospital identifiers and guessed cross-tenant encounter UUIDs;
+- chronological timeline and structured patient-context responses;
+- unauthenticated and non-admin import rejection;
+- errors/import records that do not echo submitted patient values.
 
-Docker is not installed in this environment. Compose schema/configuration was validated, but Docker image build and container startup were not executed. Compose targets PostgreSQL 16; executed database checks used PostgreSQL 14.24. Frontend verification used automated HTTP requests against the production server, not browser automation. Local production-build testing used `SESSION_COOKIE_SECURE=false`; deployment over HTTPS must use secure cookies.
+Live verification ran against Uvicorn and the Next.js production server on loopback ports 8000 and 3000. `scripts/smoke_m3.py` logged in through the real JWT endpoint, performed one valid plus one invalid record import, repeated it to confirm the same import ID, loaded the resulting patient context/timeline, and exercised the browser session proxy and new page routes. The invalid phone value did not appear in responses.
 
-Reproduce the API/session smoke checks with both applications running:
+The generator uses fixed seed `20260916` and an anchored synthetic timeline. Its second run returned the same completed import IDs and left record counts unchanged. The live smoke adds one extra obviously synthetic patient to the ignored local development database; distributed seed output remains 240 generated plus six small demo patients.
+
+Docker is not installed in this environment. Compose configuration is valid, but image build/container startup were not executed. Compose targets PostgreSQL 16; executed checks used PostgreSQL 14.24. Frontend verification used production build/typecheck plus automated HTTP calls, rather than browser automation. This prototype does not claim FHIR compliance or regulatory compliance.
+
+Reproduce the checks:
 
 ```bash
-cd backend
-uv run python ../scripts/smoke_auth.py
-```
+export TEST_DATABASE_URL='postgresql+psycopg://outreach:YOUR_PASSWORD@localhost:5432/outreach_test'
+bash scripts/test.sh -q
 
-The prior Milestone 1 verification passed 38 tests, initial migration upgrade/rollback, seed idempotency, frontend build/typecheck, and live health/tenant checks. Its temporary identity mechanism has now been replaced by JWT authentication.
+cd backend
+uv run alembic check
+uv run python ../seed/demo.py
+uv run python ../seed/synthetic.py
+uv run python ../scripts/smoke_m3.py  # with both apps running
+
+cd ../frontend
+npm run typecheck
+npm run build
+```

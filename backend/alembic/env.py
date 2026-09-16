@@ -6,7 +6,7 @@ from sqlalchemy.pool import NullPool
 
 from alembic import context
 from app.core.config import get_settings
-from app.models.entities import Base
+from app.models import Base
 
 
 def run_migrations(connection: Connection) -> None:
