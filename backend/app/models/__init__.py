@@ -1,3 +1,4 @@
+from app.models.campaigns import Campaign, CampaignStatus
 from app.models.entities import Base
 from app.models.healthcare import (
     AuditEvent,
@@ -13,6 +14,8 @@ from app.models.healthcare import (
 __all__ = [
     "AuditEvent",
     "Base",
+    "Campaign",
+    "CampaignStatus",
     "CarePlan",
     "Condition",
     "DischargeImport",
