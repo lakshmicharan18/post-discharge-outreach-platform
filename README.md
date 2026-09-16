@@ -25,7 +25,7 @@ Requests flow through route → service → repository → PostgreSQL. UUID keys
 
 Authentication uses Argon2id (`pwdlib`) and signed, expiring JWTs (`PyJWT`). Each protected request validates the token and reloads the user's active status, role, and hospital from the database. `X-Dev-User-ID`, `X-Role`, and `X-Hospital-ID` cannot authenticate or change scope. The former development identity path is removed. Details: [authentication](docs/authentication.md), [tenant architecture](docs/architecture.md).
 
-The healthcare layer separates Patient, Encounter, Discharge, Condition, Observation, Medication, CarePlan, and Procedure. **This prototype uses a simplified FHIR-like domain model and does not claim full FHIR compliance.** Configuration, relationships, import schemas, idempotency, CSV format, transaction boundaries, timeline behavior, and limitations are documented in [healthcare data and ingestion](docs/healthcare-data.md).
+The healthcare layer separates Patient, Encounter, Discharge, Condition, Observation, Medication, CarePlan, and Procedure. **This prototype uses a simplified FHIR-like domain model and does not claim full FHIR compliance.** Configuration, relationships, import schemas, idempotency, CSV format, transaction boundaries, timeline behavior, campaign lifecycle, dynamic eligibility, and limitations are documented in [healthcare data and ingestion](docs/healthcare-data.md) and [campaign eligibility](docs/campaign-eligibility.md).
 
 ## Roles and tenant isolation
 
@@ -95,7 +95,7 @@ npm ci
 npm run dev -- --hostname 127.0.0.1
 ```
 
-Open http://127.0.0.1:3000/login. Authenticated pages include `/configuration`, `/patients`, patient detail/context, and `/import`. API docs: http://127.0.0.1:8000/docs. Health: http://127.0.0.1:8000/api/v1/health.
+Open http://127.0.0.1:3000/login. Authenticated pages include `/configuration`, `/patients`, patient detail/context, `/import`, `/campaigns`, and campaign detail/eligibility. API docs: http://127.0.0.1:8000/docs. Health: http://127.0.0.1:8000/api/v1/health.
 
 For a production-build smoke test over local HTTP, run `npm run build`, then `SESSION_COOKIE_SECURE=false npm run start -- --hostname 127.0.0.1` from `frontend/`.
 
@@ -216,4 +216,6 @@ uv run python ../scripts/smoke_auth.py
 
 This checks all seven demo logins, tenant and platform boundaries, session-cookie attributes, same-origin enforcement, and logout. It expects local HTTP cookies (`SESSION_COOKIE_SECURE=false`). For Milestone 3 live verification run `uv run python ../scripts/smoke_m3.py`; it checks configuration, partial/idempotent import, timeline/context, the authenticated proxy, and all new pages.
 
-[Verification results](docs/verification.md) record actual executed checks. An import example is available at [docs/example-discharge-import.json](docs/example-discharge-import.json). Refresh tokens, MFA, password reset/invitations, login throttling, server-side logout revocation, terminology validation, and production deployment hardening remain outside this prototype milestone. No campaign, queue, AI, telephony, mock-EHR sync, or dashboard workflows were added.
+[Verification results](docs/verification.md) record actual executed checks. An import example is available at [docs/example-discharge-import.json](docs/example-discharge-import.json). Refresh tokens, MFA, password reset/invitations, login throttling, server-side logout revocation, terminology validation, and production deployment hardening remain outside this prototype milestone. No queue, AI, telephony, mock-EHR sync, or dashboard workflows were added.
+
+Campaign activation currently validates configuration and evaluates dynamic eligibility only. It does not create or schedule outbound work; queue creation and scheduling are implemented in Milestone 5.

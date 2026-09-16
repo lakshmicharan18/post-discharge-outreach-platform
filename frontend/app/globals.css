@@ -13,6 +13,7 @@ footer { margin-top: 32px; color: #526a6d; font-size: 13px; }
 
 form { max-width: 420px; display: grid; gap: 12px; }
 input { padding: 12px; border: 1px solid #91aaa5; border-radius: 5px; font: inherit; }
+select { padding: 10px; border: 1px solid #91aaa5; border-radius: 5px; font: inherit; background: white; }
 button { padding: 12px 18px; background: #286558; color: white; border: 0; border-radius: 5px; cursor: pointer; font: inherit; }
 button:disabled { opacity: .6; cursor: wait; }
 [role="alert"] { color: #a02525; }
@@ -31,3 +32,16 @@ pre { overflow-x: auto; padding: 14px; background: #f4f7f6; border-radius: 5px; 
 .timeline { display: grid; gap: 14px; padding-left: 22px; }
 .timeline li { display: grid; gap: 3px; }
 .timeline time, .timeline span { color: #526a6d; font-size: 13px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.toggle-group { display: flex !important; flex-wrap: wrap; gap: 10px; border: 1px solid #d7e3df !important; border-radius: 5px; padding: 12px !important; }
+.toggle-group legend { font-weight: 700; padding: 0 4px; }
+.toggle-group .checkbox { display: flex !important; }
+.definition-grid { display: grid; grid-template-columns: minmax(140px, .35fr) 1fr; gap: 12px 20px; }
+.definition-grid dt { font-weight: 700; }.definition-grid dd { margin: 0; color: #526a6d; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.metric-grid p { margin: 0; padding: 16px; background: #f4f7f6; border-radius: 8px; display: grid; gap: 4px; }.metric-grid strong { font-size: 28px; }.metric-grid span { font-size: 13px; }
+.two-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }.compact-section { margin-top: 20px; padding: 20px; }
+.actions { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }.actions label { display: grid; gap: 5px; font-size: 13px; }
+button.secondary { background: #526a6d; }.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }.section-heading label { display: flex; align-items: center; gap: 8px; }
+.reason { display: inline-block; margin: 2px; padding: 3px 5px; background: #f4f7f6; border-radius: 3px; font-size: 11px; }.pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }.muted { color: #526a6d; font-size: 13px; }
+@media (max-width: 600px) { main { padding: 48px 18px; }.definition-grid { grid-template-columns: 1fr; gap: 3px; }.definition-grid dd { margin-bottom: 10px; }.section-heading { align-items: start; flex-direction: column; } }
