@@ -18,6 +18,7 @@ from app.schemas.campaigns import (
 )
 from app.services.audit import add_audit_event
 from app.services.eligibility import EligibilityService
+from app.services.outreach import OutreachWorkService
 
 MUTATION_ROLES = (Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
 TRANSITIONS = {
@@ -142,6 +143,11 @@ class CampaignService:
         elif action == "complete":
             campaign.completed_at = now
         try:
+            work_summary = None
+            if action in {"start", "resume"}:
+                work_summary = await OutreachWorkService(self.session, self.context).create_missing(
+                    campaign, now=now
+                )
             await self.session.flush()
             await add_audit_event(
                 self.session,
@@ -150,7 +156,11 @@ class CampaignService:
                 audit_action,
                 "Campaign",
                 campaign.id,
-                {"from_status": previous_status.value, "to_status": target.value},
+                {
+                    "from_status": previous_status.value,
+                    "to_status": target.value,
+                    **({"work_created": work_summary.created} if work_summary else {}),
+                },
             )
             await self.session.commit()
             await self.session.refresh(campaign)

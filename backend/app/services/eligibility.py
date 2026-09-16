@@ -44,7 +44,7 @@ class EligibilityService:
         return (await self.evaluate(campaign, patient_id=patient_id, limit=100, offset=0)).items
 
     async def estimate(self, campaign: Campaign) -> CampaignEstimateResponse:
-        results = await self._all_results(campaign)
+        results = await self.all_results(campaign)
         eligible_results = [result for result in results if result.eligible]
         reason_counts = Counter(
             reason.value for result in results if not result.eligible for reason in result.reasons
@@ -61,11 +61,19 @@ class EligibilityService:
             by_ineligibility_reason=dict(sorted(reason_counts.items())),
         )
 
+    async def all_results(
+        self, campaign: Campaign, *, now: datetime | None = None
+    ) -> list[EligibilityResult]:
+        return await self._all_results(campaign, evaluated_at=now)
+
     async def _all_results(
-        self, campaign: Campaign, patient_id: UUID | None = None
+        self,
+        campaign: Campaign,
+        patient_id: UUID | None = None,
+        evaluated_at: datetime | None = None,
     ) -> list[EligibilityResult]:
         criteria = self._criteria(campaign)
-        evaluated_at = datetime.now(timezone.utc)
+        evaluated_at = evaluated_at or datetime.now(timezone.utc)
         candidates = await self.repository.candidates(patient_id)
         return [
             self._evaluate_candidate(campaign, criteria, candidate, evaluated_at)

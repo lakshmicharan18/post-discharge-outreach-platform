@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     Time,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,6 +28,23 @@ class CampaignStatus(str, enum.Enum):
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+    FAILED = "FAILED"
+
+
+class OutreachTaskState(str, enum.Enum):
+    PENDING = "PENDING"
+    SCHEDULED = "SCHEDULED"
+    CALLING = "CALLING"
+    CONNECTED = "CONNECTED"
+    COMPLETED = "COMPLETED"
+    NO_ANSWER = "NO_ANSWER"
+    BUSY = "BUSY"
+    VOICEMAIL = "VOICEMAIL"
+    DROPPED = "DROPPED"
+    RETRY_SCHEDULED = "RETRY_SCHEDULED"
+    CALLBACK_SCHEDULED = "CALLBACK_SCHEDULED"
+    ESCALATED = "ESCALATED"
+    MANUAL_FOLLOW_UP = "MANUAL_FOLLOW_UP"
     FAILED = "FAILED"
 
 
@@ -73,3 +91,38 @@ class Campaign(Identity, Tenant, Timestamps, Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OutreachTask(Identity, Tenant, Timestamps, Base):
+    __tablename__ = "outreach_tasks"
+    __table_args__ = (
+        UniqueConstraint("hospital_id", "campaign_id", "discharge_id"),
+        CheckConstraint("attempt_count >= 0", name="attempt_count"),
+        CheckConstraint("max_attempts > 0", name="max_attempts"),
+        Index("ix_outreach_tasks_hospital_state_next", "hospital_id", "state", "next_eligible_at"),
+        Index(
+            "ix_outreach_tasks_hospital_state_priority", "hospital_id", "state", "priority_score"
+        ),
+    )
+    campaign_id: Mapped[UUID] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    patient_id: Mapped[UUID] = mapped_column(ForeignKey("patients.id"), index=True)
+    discharge_id: Mapped[UUID] = mapped_column(ForeignKey("discharges.id"), index=True)
+    state: Mapped[OutreachTaskState] = mapped_column(
+        Enum(OutreachTaskState, name="outreach_task_state"),
+        default=OutreachTaskState.PENDING,
+        index=True,
+    )
+    priority_score: Mapped[int] = mapped_column(Integer, index=True)
+    priority_components: Mapped[dict] = mapped_column(JSONB, default=dict)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer)
+    eligible_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    next_eligible_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    clinical_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    callback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_outcome: Mapped[str | None] = mapped_column(String(50))
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    manual_follow_up_required: Mapped[bool] = mapped_column(default=False)

@@ -1,0 +1,42 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
+from app.models.campaigns import OutreachTaskState
+
+
+class OutreachTaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    hospital_id: UUID
+    campaign_id: UUID
+    patient_id: UUID
+    discharge_id: UUID
+    state: OutreachTaskState
+    priority_score: int
+    priority_components: dict[str, int]
+    attempt_count: int
+    max_attempts: int
+    eligible_at: datetime
+    next_eligible_at: datetime
+    clinical_deadline: datetime
+    callback_at: datetime | None
+    scheduled_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    last_outcome: str | None
+    last_error_code: str | None
+    manual_follow_up_required: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class OutreachWorkCreationSummary(BaseModel):
+    campaign_id: UUID
+    evaluated: int
+    eligible: int
+    created: int
+    already_existing: int
+    ineligible: int

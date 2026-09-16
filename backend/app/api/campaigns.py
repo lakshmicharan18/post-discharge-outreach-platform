@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import RequestContext, get_context
 from app.core.database import get_session
+from app.models.campaigns import OutreachTaskState
 from app.schemas.campaigns import (
     CampaignCreate,
     CampaignEstimateResponse,
@@ -15,8 +16,10 @@ from app.schemas.campaigns import (
 )
 from app.schemas.eligibility import EligibilityPage, PatientEligibilityResponse
 from app.schemas.entities import ErrorResponse
+from app.schemas.outreach import OutreachTaskResponse
 from app.services.campaigns import CampaignService
 from app.services.eligibility import EligibilityService
+from app.services.outreach import OutreachWorkService
 
 router = APIRouter(
     prefix="/api/v1/campaigns",
@@ -79,6 +82,22 @@ async def patient_campaign_eligibility(
     campaign = await CampaignService(session, context).get(campaign_id)
     results = await EligibilityService(session, context).patient_results(campaign, patient_id)
     return PatientEligibilityResponse(patient_id=patient_id, results=results)
+
+
+@router.get("/{campaign_id}/outreach-tasks", response_model=list[OutreachTaskResponse])
+async def list_outreach_tasks(
+    campaign_id: UUID,
+    session: Session,
+    context: Context,
+    state: OutreachTaskState | None = None,
+    patient_id: UUID | None = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+):
+    await CampaignService(session, context).get(campaign_id)
+    return await OutreachWorkService(session, context).list(
+        campaign_id, state, patient_id, limit, offset
+    )
 
 
 @router.post("/{campaign_id}/ready", response_model=CampaignResponse)

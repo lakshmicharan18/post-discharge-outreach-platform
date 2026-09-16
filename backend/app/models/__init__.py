@@ -1,4 +1,4 @@
-from app.models.campaigns import Campaign, CampaignStatus
+from app.models.campaigns import Campaign, CampaignStatus, OutreachTask, OutreachTaskState
 from app.models.entities import Base
 from app.models.healthcare import (
     AuditEvent,
@@ -16,6 +16,8 @@ __all__ = [
     "Base",
     "Campaign",
     "CampaignStatus",
+    "OutreachTask",
+    "OutreachTaskState",
     "CarePlan",
     "Condition",
     "DischargeImport",
