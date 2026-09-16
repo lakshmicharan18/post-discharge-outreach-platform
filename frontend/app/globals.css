@@ -10,3 +10,9 @@ section p { color: #526a6d; line-height: 1.65; }
 .badge { display: inline-block; color: #286558; background: #e8f4ef; border-radius: 20px; padding: 7px 12px; font-size: 12px; font-weight: 700; }
 h2 { font-size: 22px; line-height: 1.4; }
 footer { margin-top: 32px; color: #526a6d; font-size: 13px; }
+
+form { max-width: 420px; display: grid; gap: 12px; }
+input { padding: 12px; border: 1px solid #91aaa5; border-radius: 5px; font: inherit; }
+button { padding: 12px 18px; background: #286558; color: white; border: 0; border-radius: 5px; cursor: pointer; font: inherit; }
+button:disabled { opacity: .6; cursor: wait; }
+[role="alert"] { color: #a02525; }

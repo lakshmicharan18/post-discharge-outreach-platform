@@ -1,6 +1,8 @@
 import os
+import secrets
 from collections.abc import AsyncIterator
 from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from uuid import UUID
 
 import pytest
@@ -14,15 +16,28 @@ if not TEST_URL or not (make_url(TEST_URL).database or "").endswith("_test"):
     raise RuntimeError("Set TEST_DATABASE_URL to a migrated PostgreSQL database ending in _test")
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ["ENVIRONMENT"] = "test"
-os.environ["ENABLE_DEV_AUTH"] = "true"
+os.environ["JWT_SECRET"] = secrets.token_urlsafe(48)
 
 from app.core.database import get_session  # noqa: E402
+from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.entities import Discharge, Encounter, Hospital, Patient, Role, User  # noqa: E402
 
 
 def uid(number: int) -> UUID:
     return UUID(int=number)
+
+
+TEST_PASSWORD = "TestOnly-Password-2026!"
+
+
+@lru_cache
+def test_password_hash():
+    return hash_password(TEST_PASSWORD)
+
+
+def auth_headers(user_id):
+    return {"Authorization": f"Bearer {create_access_token(uid(user_id))}"}
 
 
 @pytest.fixture
@@ -44,8 +59,20 @@ async def session() -> AsyncIterator[AsyncSession]:
                         email=f"admin{tenant}@example.test",
                         full_name="Test Admin",
                         role=Role.HOSPITAL_ADMIN,
+                        password_hash=test_password_hash(),
                     )
                 )
+                for index, role in enumerate((Role.CAMPAIGN_MANAGER, Role.CLINICAL_REVIEWER), 1):
+                    session.add(
+                        User(
+                            id=uid(tenant * 10 + index),
+                            hospital_id=uid(tenant),
+                            email=f"{role.value.lower()}{tenant}@example.test",
+                            full_name=role.value,
+                            role=role,
+                            password_hash=test_password_hash(),
+                        )
+                    )
                 for i in range(3):
                     session.add(
                         Patient(
@@ -64,6 +91,7 @@ async def session() -> AsyncIterator[AsyncSession]:
                     email="platform@example.test",
                     full_name="Platform",
                     role=Role.PLATFORM_ADMIN,
+                    password_hash=test_password_hash(),
                 )
             )
             await session.flush()

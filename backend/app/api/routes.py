@@ -1,12 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.context import RequestContext, get_context
+from app.core.context import RequestContext, get_context, require_any_role
 from app.core.database import get_session
-from app.models.entities import Discharge, Encounter, Hospital, Patient
+from app.models.entities import Discharge, Encounter, Hospital, Patient, Role, User
+from app.schemas.auth import CurrentUserResponse, LoginRequest, LoginResponse, UserCreate
 from app.schemas.entities import (
     DischargeCreate,
     DischargeResponse,
@@ -18,10 +19,13 @@ from app.schemas.entities import (
     HospitalResponse,
     PatientCreate,
     PatientResponse,
+    UserResponse,
 )
+from app.services.auth import AuthService
 from app.services.clinical import ClinicalService
 from app.services.health import check_health
 from app.services.platform import HospitalService
+from app.services.users import UserService
 
 router = APIRouter(
     prefix="/api/v1",
@@ -29,6 +33,7 @@ router = APIRouter(
 )
 Session = Annotated[AsyncSession, Depends(get_session)]
 Context = Annotated[RequestContext, Depends(get_context)]
+HospitalAdmin = Annotated[RequestContext, Depends(require_any_role(Role.HOSPITAL_ADMIN))]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 
@@ -65,7 +70,9 @@ async def get_patients(identifier: UUID, session: Session, context: Context) -> 
 
 
 @router.post("/patients", response_model=PatientResponse, status_code=201, tags=["patients"])
-async def create_patients(payload: PatientCreate, session: Session, context: Context) -> Patient:
+async def create_patients(
+    payload: PatientCreate, session: Session, context: HospitalAdmin
+) -> Patient:
     return await ClinicalService(session, context, Patient).create(payload)
 
 
@@ -83,7 +90,7 @@ async def get_encounters(identifier: UUID, session: Session, context: Context) -
 
 @router.post("/encounters", response_model=EncounterResponse, status_code=201, tags=["encounters"])
 async def create_encounters(
-    payload: EncounterCreate, session: Session, context: Context
+    payload: EncounterCreate, session: Session, context: HospitalAdmin
 ) -> Encounter:
     return await ClinicalService(session, context, Encounter).create(payload)
 
@@ -102,6 +109,29 @@ async def get_discharges(identifier: UUID, session: Session, context: Context) -
 
 @router.post("/discharges", response_model=DischargeResponse, status_code=201, tags=["discharges"])
 async def create_discharges(
-    payload: DischargeCreate, session: Session, context: Context
+    payload: DischargeCreate, session: Session, context: HospitalAdmin
 ) -> Discharge:
     return await ClinicalService(session, context, Discharge).create(payload)
+
+
+@router.post("/auth/login", response_model=LoginResponse, tags=["auth"])
+async def login(payload: LoginRequest, session: Session, response: Response) -> LoginResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return await AuthService(session).login(payload)
+
+
+@router.get("/users/me", response_model=CurrentUserResponse, tags=["users"])
+async def current_user(session: Session, context: Context) -> CurrentUserResponse:
+    return await AuthService(session).current_user(context)
+
+
+@router.get("/users", response_model=list[UserResponse], tags=["users"])
+async def list_users(
+    session: Session, context: HospitalAdmin, limit: Limit = 50, offset: Offset = 0
+) -> list[User]:
+    return await UserService(session, context).list(limit, offset)
+
+
+@router.post("/users", response_model=UserResponse, status_code=201, tags=["users"])
+async def create_user(payload: UserCreate, session: Session, context: HospitalAdmin) -> User:
+    return await UserService(session, context).create(payload)

@@ -1,51 +1,59 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import APIError
-from app.models.entities import Hospital, Role, User
+from app.models.entities import Role
 
 
 @dataclass(frozen=True)
-class RequestContext:
+class CurrentUserContext:
     user_id: UUID
     hospital_id: UUID | None
     role: Role
+    is_active: bool = True
+
+    def require_roles(self, *roles: Role) -> None:
+        if not self.is_active or self.role not in roles:
+            raise APIError(403, "forbidden", "This operation is not permitted for your role")
 
     def require_clinical_tenant(self) -> UUID:
-        if (
-            self.role not in (Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER, Role.CLINICAL_REVIEWER)
-            or self.hospital_id is None
-        ):
+        self.require_roles(Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER, Role.CLINICAL_REVIEWER)
+        if self.hospital_id is None:
             raise APIError(403, "clinical_access_denied", "Hospital clinical context is required")
         return self.hospital_id
 
     def require_platform_admin(self) -> None:
-        if self.role != Role.PLATFORM_ADMIN:
-            raise APIError(403, "forbidden", "Platform administrator role is required")
+        self.require_roles(Role.PLATFORM_ADMIN)
+
+
+# Preserve the established service/repository interface.
+RequestContext = CurrentUserContext
+bearer = HTTPBearer(auto_error=False)
 
 
 async def get_context(
     session: Annotated[AsyncSession, Depends(get_session)],
-    x_dev_user_id: Annotated[UUID | None, Header()] = None,
-) -> RequestContext:
-    """Replace this dependency with verified authentication in a later milestone.
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> CurrentUserContext:
+    from app.services.auth import AuthService
 
-    The opt-in local adapter resolves role/tenant from the database, never headers.
-    A user UUID is not a credential; do not expose this adapter on public networks.
-    """
-    if not get_settings().enable_dev_auth or x_dev_user_id is None:
-        raise APIError(401, "authentication_required", "A verified identity is required")
-    user = await session.get(User, x_dev_user_id)
-    if user is None or not user.is_active:
-        raise APIError(401, "invalid_identity", "Identity is unavailable")
-    if user.hospital_id is not None:
-        hospital = await session.get(Hospital, user.hospital_id)
-        if hospital is None or hospital.status != "ACTIVE":
-            raise APIError(403, "inactive_hospital", "Hospital is unavailable")
-    return RequestContext(user.id, user.hospital_id, user.role)
+    if credentials is None:
+        raise APIError(401, "authentication_required", "A bearer access token is required")
+    return await AuthService(session).resolve_context(credentials.credentials)
+
+
+def require_any_role(*roles: Role) -> Callable:
+    async def guard(
+        context: Annotated[CurrentUserContext, Depends(get_context)],
+    ) -> CurrentUserContext:
+        context.require_roles(*roles)
+        return context
+
+    return guard

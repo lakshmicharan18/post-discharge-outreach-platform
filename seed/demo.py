@@ -14,7 +14,10 @@ from sqlalchemy import select  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
 from app.core.database import SessionFactory, engine  # noqa: E402
+from app.core.security import hash_password  # noqa: E402
 from app.models.entities import Discharge, Encounter, Hospital, Patient, Role, User  # noqa: E402
+
+DEMO_PASSWORD = "DemoOnly-ChangeMe-2026!"
 
 
 def seed_id(number: int) -> UUID:
@@ -42,7 +45,10 @@ async def seed() -> None:
                 (Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER, Role.CLINICAL_REVIEWER)
             ):
                 email = f"{role.value.lower()}.{tenant}@example.test"
-                if await session.scalar(select(User).where(User.email == email)) is None:
+                existing = await session.scalar(select(User).where(User.email == email))
+                if existing is not None and existing.password_hash is None:
+                    existing.password_hash = hash_password(DEMO_PASSWORD)
+                if existing is None:
                     session.add(
                         User(
                             id=seed_id(tenant * 100 + index),
@@ -50,6 +56,7 @@ async def seed() -> None:
                             email=email,
                             full_name=f"Demo {role.value}",
                             role=role,
+                            password_hash=hash_password(DEMO_PASSWORD),
                         )
                     )
             for index in range(3):
@@ -100,13 +107,17 @@ async def seed() -> None:
                         discharge_instructions="Synthetic demo instructions.",
                     )
                 )
-        if await session.get(User, seed_id(999)) is None:
+        existing_platform = await session.get(User, seed_id(999))
+        if existing_platform is not None and existing_platform.password_hash is None:
+            existing_platform.password_hash = hash_password(DEMO_PASSWORD)
+        if existing_platform is None:
             session.add(
                 User(
                     id=seed_id(999),
                     email="platform.admin@example.test",
                     full_name="Demo Platform Admin",
                     role=Role.PLATFORM_ADMIN,
+                    password_hash=hash_password(DEMO_PASSWORD),
                 )
             )
     await engine.dispose()

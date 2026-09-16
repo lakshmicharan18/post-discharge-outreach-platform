@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     MetaData,
     String,
     Text,
@@ -74,6 +75,7 @@ class User(Identity, Timestamps, Base):
     )
     hospital_id: Mapped[UUID | None] = mapped_column(ForeignKey("hospitals.id"), index=True)
     email: Mapped[str] = mapped_column(String(254), unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     full_name: Mapped[str] = mapped_column(String(200))
     role: Mapped[Role] = mapped_column(Enum(Role, name="user_role"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -138,3 +140,6 @@ class Discharge(Identity, Tenant, Base):
     risk_level: Mapped[str] = mapped_column(String(20), default="UNKNOWN")
     discharge_instructions: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="PENDING")
+
+
+Index("uq_users_email_lower", func.lower(User.email), unique=True)

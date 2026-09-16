@@ -1,9 +1,9 @@
 import pytest
-from conftest import uid
+from conftest import auth_headers, uid
 from sqlalchemy.exc import OperationalError
 from test_tenant_isolation import headers
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.database import get_session
 from app.main import app
 from app.models.entities import Hospital, User
@@ -18,15 +18,16 @@ async def test_health(client):
 async def test_auth_required_and_unknown_user(client):
     for identity in (None, str(uid(9999))):
         response = await client.get(
-            "/api/v1/patients", headers={"X-Dev-User-ID": identity} if identity else {}
+            "/api/v1/patients", headers=auth_headers(9999) if identity else {}
         )
         assert response.status_code == 401
         assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
 
 
-async def test_dev_auth_can_be_disabled(client, monkeypatch):
-    monkeypatch.setattr(get_settings(), "enable_dev_auth", False)
-    assert (await client.get("/api/v1/patients", headers=headers())).status_code == 401
+async def test_development_identity_is_removed(client):
+    assert (
+        await client.get("/api/v1/patients", headers={"X-Dev-User-ID": str(uid(10))})
+    ).status_code == 401
 
 
 @pytest.mark.parametrize(
@@ -41,14 +42,12 @@ async def test_inactive_identity_or_hospital_denied(client, session, model, fiel
 
 async def test_platform_metadata_is_separate(client):
     assert (await client.get("/api/v1/platform/hospitals", headers=headers())).status_code == 403
-    response = await client.get(
-        "/api/v1/platform/hospitals", headers={"X-Dev-User-ID": str(uid(99))}
-    )
+    response = await client.get("/api/v1/platform/hospitals", headers=auth_headers(99))
     assert response.status_code == 200
     assert len(response.json()) == 2
     response = await client.post(
         "/api/v1/platform/hospitals",
-        headers={"X-Dev-User-ID": str(uid(99))},
+        headers=auth_headers(99),
         json={"name": "Hospital C", "code": "C", "timezone": "Asia/Kolkata"},
     )
     assert response.status_code == 201
@@ -96,10 +95,10 @@ async def test_pagination(client):
     assert {row["id"] for row in first.json()}.isdisjoint({row["id"] for row in second.json()})
 
 
-def test_production_rejects_dev_auth():
-    with pytest.raises(ValueError, match="Development authentication"):
+def test_weak_jwt_secret_is_rejected():
+    with pytest.raises(ValueError, match="JWT_SECRET"):
         Settings(
             database_url="postgresql+psycopg://localhost/example",
             environment="production",
-            enable_dev_auth=True,
+            jwt_secret="short",
         )

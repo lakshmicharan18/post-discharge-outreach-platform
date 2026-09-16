@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from conftest import uid
+from conftest import auth_headers, uid
 from sqlalchemy.exc import IntegrityError
 
 from app.core.context import RequestContext
@@ -12,7 +12,7 @@ from app.repositories.clinical import ClinicalRepository
 
 
 def headers(tenant=1):
-    return {"X-Dev-User-ID": str(uid(tenant * 10))}
+    return auth_headers(tenant * 10)
 
 
 def patient_payload():
@@ -55,7 +55,7 @@ async def test_lists_are_tenant_scoped(client, resource, count, tenant):
 @pytest.mark.parametrize("resource", ["patients", "encounters", "discharges"])
 async def test_platform_admin_has_no_clinical_access(client, resource):
     response = await client.get(
-        f"/api/v1/{resource}", headers={"X-Dev-User-ID": str(uid(99)), "X-Hospital-ID": str(uid(1))}
+        f"/api/v1/{resource}", headers={**auth_headers(99), "X-Hospital-ID": str(uid(1))}
     )
     assert response.status_code == 403
 

@@ -1,150 +1,187 @@
 # Multi-Hospital Post-Discharge Outreach Platform
 
-Milestone 1 implements the project foundation and multi-tenant core. FastAPI owns data access and tenant authorization; Next.js provides a minimal TypeScript landing page. All demonstration records are synthetic.
+Milestones 1–2 implement the multi-tenant foundation plus JWT authentication, RBAC, and a minimal login/session UI. All demo records are synthetic. Campaigns, queues, AI, telephony, and dashboards remain deferred.
 
 ## Architecture
 
 ```text
-backend/
-  app/
-    api/             HTTP routes and dependency wiring
-    core/            configuration, database sessions, identity context, errors
-    models/          SQLAlchemy entities and database constraints
-    schemas/         Pydantic input/output models
-    repositories/    mandatory hospital-scoped clinical queries
-    services/        relationship validation and transaction boundaries
-    queue/ workers/ ai/ ehr/ retrieval/ events/ observability/
-                     reserved packages only
-  alembic/           versioned PostgreSQL migrations
-  tests/             PostgreSQL-backed API/repository/constraint tests
-frontend/            Next.js App Router and TypeScript
-seed/                repeatable synthetic seed
-scripts/             verification helper
-docs/               architecture and verification notes
+backend/app/
+  api/             thin HTTP routes and reusable dependency wiring
+  core/            configuration, async database, JWT/password security, context, errors
+  models/          SQLAlchemy entities and database constraints
+  schemas/         Pydantic request/public response schemas
+  repositories/    scoped data access; separate identity/platform lookup
+  services/        authentication, authorization, relationships, transactions
+  queue/ workers/ ai/ ehr/ retrieval/ events/ observability/   reserved packages
+backend/alembic/    versioned PostgreSQL migrations
+backend/tests/      PostgreSQL-backed auth/RBAC/tenant/regression tests
+frontend/           Next.js TypeScript login, session page, server-side auth handlers
+seed/               idempotent synthetic demo data
+scripts/            test helper
+docs/               architecture, authentication, verification
 ```
 
-Request flow: route → service → repository → PostgreSQL. Services own commits and rollbacks. Each request uses an async SQLAlchemy session. Routes contain no business logic.
+Requests flow through route → service → repository → PostgreSQL. UUID keys, timezone-aware timestamps, tenant-scoped repositories, and composite foreign keys from Milestone 1 are preserved. The product source is [Project_Requirements.pdf](Project_Requirements.pdf), which is stored at the repository root.
 
-Hospital, User, Patient, Encounter, and Discharge have UUID primary keys. Patient, Encounter, and Discharge require `hospital_id`. Timestamps use PostgreSQL `TIMESTAMP WITH TIME ZONE`; incoming encounter/discharge timestamps must include an offset. Creation/update timestamps on hospitals, users, and patients are database-initialized, with SQLAlchemy updating `updated_at` on ORM writes.
+Authentication uses Argon2id (`pwdlib`) and signed, expiring JWTs (`PyJWT`). Each protected request validates the token and reloads the user's active status, role, and hospital from the database. `X-Dev-User-ID`, `X-Role`, and `X-Hospital-ID` cannot authenticate or change scope. The former development identity path is removed. Details: [authentication](docs/authentication.md), [tenant architecture](docs/architecture.md).
 
-Clinical repositories require a `RequestContext(user_id, hospital_id, role)` and apply hospital predicates to both list and individual-record queries. Create operations assign the hospital from context. Composite foreign keys also prevent cross-hospital patient/encounter/discharge relationships and discharges referencing the wrong patient. External identifiers are unique per hospital; their composite unique indexes support tenant-local lookups. Platform administration only exposes hospital metadata; platform admins receive 403 from clinical repositories even if given a hospital ID. See [tenant design](docs/architecture.md).
+## Roles and tenant isolation
 
-## Prerequisites and configuration
+| Role | Scope | Allowed |
+| --- | --- | --- |
+| PLATFORM_ADMIN | Platform | List/create hospital metadata; own identity |
+| HOSPITAL_ADMIN | Own hospital | Read/create clinical records; list/create hospital users; own identity |
+| CAMPAIGN_MANAGER | Own hospital | Read patient/encounter/discharge data; own identity |
+| CLINICAL_REVIEWER | Own hospital | Read patient/encounter/discharge data; own identity |
 
-Use Python 3.12+ (Docker uses 3.13), `uv`, Node.js 20.9+, npm, and Docker with Compose v2. PostgreSQL 16 is configured in Compose. Backend dependencies are locked in `backend/uv.lock`; frontend dependencies in `frontend/package-lock.json`.
+**Platform Admin does not automatically have unrestricted patient clinical access.** It receives 403 from clinical endpoints/repositories, including individual record retrieval. Hospital-bound requests derive their tenant from authenticated identity. Foreign-tenant record lookups return the same 404 as nonexistent records. Hospital/user creation inputs cannot override the authenticated tenant; hospital admins cannot create platform admins.
 
-From the repository root:
+## Setup and environment
+
+Prerequisites: Python 3.12+ (Docker uses 3.13), uv, Node.js 20.9+, npm, PostgreSQL, and optionally Docker with Compose v2. Compose targets PostgreSQL 16. Dependencies are locked in `backend/uv.lock` and `frontend/package-lock.json`.
+
+From the repository root, for a **fresh installation**:
 
 ```bash
 cp .env.example .env
+python -c 'import secrets; print(secrets.token_urlsafe(48))'
 ```
 
-Replace both password placeholders in `.env` with the same local password. A random hexadecimal password avoids URL escaping issues. Do not commit `.env`.
+Paste the generated value into `JWT_SECRET` in `.env`. Replace the two database password placeholders with the same local password. Do not overwrite an existing configured `.env`; add the JWT settings to it instead. Do not commit secrets. A hexadecimal database password avoids URL encoding issues.
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Required for local backend/migrations; `postgresql+psycopg://USER:PASSWORD@HOST:PORT/DB`. URL-encode reserved password characters. |
-| `POSTGRES_USER` | Compose database user; default `outreach`. |
+| `DATABASE_URL` | Local backend/Alembic connection using `postgresql+psycopg://USER:PASSWORD@HOST:PORT/DB`; URL-encode reserved password characters. |
+| `JWT_SECRET` | Required random signing key, at least 32 bytes; no default. |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Token lifetime, default 30; permitted range 1–1440. |
+| `ENVIRONMENT` | `development`, `test`, or `production`; production disables demo seeding. |
+| `POSTGRES_USER`, `POSTGRES_DB` | Compose database identity; defaults `outreach`. |
 | `POSTGRES_PASSWORD` | Required Compose database password. |
-| `POSTGRES_DB` | Compose database; default `outreach`. |
-| `POSTGRES_PORT` | Host database port; default `5432`. |
-| `BACKEND_PORT` | Host API port; default `8000`. |
-| `ENVIRONMENT` | `development`, `test`, or `production`. |
-| `ENABLE_DEV_AUTH` | Default `false`; explicitly enable only for local synthetic-data demos. |
-| `TEST_DATABASE_URL` | Explicit disposable database ending in `_test`, used by the tests. |
+| `POSTGRES_PORT`, `BACKEND_PORT` | Host ports; defaults 5432 and 8000. |
+| `TEST_DATABASE_URL` | Disposable PostgreSQL test database ending in `_test`. |
 
-Backend settings read the root `.env` when run from `backend/`; process environment variables take precedence. Compose constructs its own backend database URL using service hostname `postgres`; local commands use `DATABASE_URL`.
+Backend settings read root `.env` when run from `backend/`; environment variables take precedence. Compose constructs its internal URL using hostname `postgres`.
 
-## Start with Docker Compose
+Frontend configuration goes in `frontend/.env.local` (copy `frontend/.env.example`):
 
-```bash
-docker compose up --build -d
-docker compose logs backend
-curl http://localhost:8000/api/v1/health
-docker compose exec backend .venv/bin/python seed/demo.py
-```
+| Variable | Purpose |
+| --- | --- |
+| `BACKEND_URL` | Server-side API address; default `http://127.0.0.1:8000`. |
+| `SESSION_COOKIE_SECURE` | Set `false` for local HTTP, `true` for HTTPS deployments; defaults true in production builds. |
 
-The backend waits for PostgreSQL readiness, runs `alembic upgrade head`, then starts Uvicorn. Database data persists in a named volume. Services bind to loopback. For future multi-replica deployment, run migrations as a separate deployment step.
+The signing key is never needed by the frontend. Its server handlers store the access token in an HttpOnly, SameSite=Strict cookie and forward it as Bearer authorization. Browser JavaScript never receives the JWT. Login/logout require a matching Origin header. Logout clears the browser session; JWT revocation is not implemented.
 
-Start the frontend separately:
+## Start locally
+
+With PostgreSQL already running and `.env` configured:
 
 ```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Frontend: http://localhost:3000. API health: http://localhost:8000/api/v1/health. OpenAPI UI: http://localhost:8000/docs. Health checks database connectivity and returns 503 with the standard error envelope if unavailable. The frontend is a foundation page, without clinical data access or dashboards.
-
-## Run the backend locally
-
-Start PostgreSQL with `docker compose up -d postgres`, or use an existing UTF-8 PostgreSQL database and adjust `DATABASE_URL`.
-
-```bash
+# Terminal 1, from repository root
 cd backend
 uv sync --frozen
 uv run alembic upgrade head
 uv run python ../seed/demo.py
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-## Development identity and endpoints
+```bash
+# Terminal 2, from repository root
+cd frontend
+cp .env.example .env.local  # first run only
+npm ci
+npm run dev -- --hostname 127.0.0.1
+```
 
-Real authentication is deferred. With the default `ENABLE_DEV_AUTH=false`, every protected route returns 401. In production, enabling development authentication fails configuration validation. To exercise synthetic data locally, set `ENABLE_DEV_AUTH=true` and restart the backend (`docker compose up -d backend` for Compose).
+Open http://127.0.0.1:3000/login. After login, the session page displays name, hospital, role, and a sign-out action. API docs: http://127.0.0.1:8000/docs. Health: http://127.0.0.1:8000/api/v1/health.
 
-The local adapter accepts `X-Dev-User-ID` and resolves the user's hospital, role, active flag, and hospital status from PostgreSQL. This header is **not a credential**: anyone with local API access can select a seeded identity. Replace `get_context` with a verified authentication dependency before exposing clinical data. `X-Hospital-ID` and `X-Role` do not affect authorization.
+For a production-build smoke test over local HTTP, run `npm run build`, then `SESSION_COOKIE_SECURE=false npm run start -- --hostname 127.0.0.1` from `frontend/`.
 
-Seed creates Hospital A and B, three role-specific users and three patients per hospital, one encounter/discharge per patient, and a separate platform admin. Running it twice does not duplicate the demo records.
+## Docker Compose backend/database
 
-| Identity | Demo UUID |
+With root `.env` configured:
+
+```bash
+docker compose up --build -d
+docker compose logs backend
+docker compose exec backend .venv/bin/python seed/demo.py
+curl http://127.0.0.1:8000/api/v1/health
+```
+
+Compose waits for database health, migrates, and starts Uvicorn; data persists in a named volume. Both services bind to loopback. Start the frontend separately with the commands above. For future multi-replica deployment, run migrations as a separate deployment step.
+
+## Demo credentials — development only
+
+All seven seeded accounts use **`DemoOnly-ChangeMe-2026!`**. These are public demonstration credentials for synthetic data only; never enable these accounts with real patient data. Seeding is blocked when `ENVIRONMENT=production`.
+
+| Scope | Role | Email |
+| --- | --- | --- |
+| Platform | PLATFORM_ADMIN | `platform.admin@example.test` |
+| Hospital A | HOSPITAL_ADMIN | `hospital_admin.1@example.test` |
+| Hospital A | CAMPAIGN_MANAGER | `campaign_manager.1@example.test` |
+| Hospital A | CLINICAL_REVIEWER | `clinical_reviewer.1@example.test` |
+| Hospital B | HOSPITAL_ADMIN | `hospital_admin.2@example.test` |
+| Hospital B | CAMPAIGN_MANAGER | `campaign_manager.2@example.test` |
+| Hospital B | CLINICAL_REVIEWER | `clinical_reviewer.2@example.test` |
+
+The seed retains two hospitals, three patients and encounters/discharges per hospital, and seven users. Reruns do not duplicate data or overwrite existing passwords. Existing known demo users with no hash receive the demo password during seeding.
+
+## API usage
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"hospital_admin.1@example.test","password":"DemoOnly-ChangeMe-2026!"}'
+```
+
+Login returns `access_token`, `token_type`, `expires_in` (seconds), and public `user` information. Use the returned access token:
+
+```bash
+curl http://127.0.0.1:8000/api/v1/users/me -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+curl http://127.0.0.1:8000/api/v1/patients -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+```
+
+| Endpoint | Behavior |
 | --- | --- |
-| Hospital A admin | `00000000-0000-0000-0000-000000000064` |
-| Hospital B admin | `00000000-0000-0000-0000-0000000000c8` |
-| Platform admin | `00000000-0000-0000-0000-0000000003e7` |
+| `GET /api/v1/health` | Public database health check. |
+| `POST /api/v1/auth/login` | Public JSON email/password login. |
+| `GET /api/v1/users/me` | Current identity, role, hospital metadata. |
+| `GET /api/v1/users` | Hospital-admin-only tenant user list. |
+| `POST /api/v1/users` | Hospital-admin-only create; fields `email`, `full_name`, `role`, `password`. |
+| `GET /api/v1/{patients,encounters,discharges}` | Hospital-scoped lists. |
+| `GET /api/v1/{patients,encounters,discharges}/{id}` | Hospital-scoped retrieval. |
+| `POST /api/v1/{patients,encounters,discharges}` | Hospital-admin-only create. |
+| `GET/POST /api/v1/platform/hospitals` | Platform-admin-only hospital metadata. |
+
+List endpoints support `limit` (1–100, default 50) and `offset` (default 0). Unauthenticated/invalid-token requests return 401 with `WWW-Authenticate: Bearer`; role failures return 403. Password hashes never appear in responses. Errors retain the existing `{"error":{"code":"...","message":"...","request_id":"UUID"}}` envelope. Validation errors do not echo submitted credentials.
+
+## Database migrations
 
 ```bash
-curl -H 'X-Dev-User-ID: 00000000-0000-0000-0000-000000000064' \
-  http://localhost:8000/api/v1/patients
-```
-
-Clinical routes support `GET` list, `GET /{id}`, and `POST` at `/api/v1/patients`, `/api/v1/encounters`, and `/api/v1/discharges`. Lists accept `limit` (1–100, default 50) and `offset` (default 0). POST schemas reject extra fields, including client-supplied `hospital_id`. Cross-tenant IDs return the same 404 as nonexistent records. All three hospital roles currently share these foundation operations; finer workflow permissions are deferred. `/api/v1/platform/hospitals` supports platform-admin-only GET and POST. Users are seeded; user-management endpoints are deferred.
-
-Errors follow `{"error":{"code":"not_found","message":"Record not found","request_id":"UUID"}}`. Responses include `X-Request-ID`. Error responses/logs exclude request values, SQL, and exception messages that might contain sensitive data.
-
-## Migrations
-
-Run from `backend/`:
-
-```bash
+cd backend
 uv run alembic upgrade head
 uv run alembic current
 uv run alembic check
-# After model changes, generate and review the migration:
-uv run alembic revision --autogenerate -m "describe change"
 ```
 
-The initial migration creates all five tables, the role enum, indexes, and tenant relationship constraints. Rollback is supported with `uv run alembic downgrade base`, which **deletes all application tables and data**; use only on a disposable database.
+Milestone 1 migration remains unchanged. New migration `2a0000000001` adds nullable `password_hash` and a unique index on `lower(email)`. Existing non-demo users cannot log in until explicitly provisioned; there is no shared migration password. Resolve any existing case-only duplicate emails before upgrading.
 
-## Tests and checks
+On a **disposable database only**, verify Milestone 2 rollback with `uv run alembic downgrade e18e73d6e369`, then `uv run alembic upgrade head`. Rollback preserves user records but deletes password hashes. Do not run this on the working database unless credential loss is intended.
 
-Tests require real PostgreSQL and an explicitly selected, migrated test database. They use per-test transactions/savepoints and roll back their fixtures. They never create/drop application tables themselves and do not use SQLite.
+## Tests and verification
 
-Create the test database once (with the default Compose user):
+Tests require real PostgreSQL and use per-test transactions/savepoints. Create a test database once; for the default Compose setup:
 
 ```bash
 docker compose exec postgres createdb -U outreach outreach_test
-```
-
-From the repository root, set its URL with your local password and run:
-
-```bash
 export TEST_DATABASE_URL='postgresql+psycopg://outreach:YOUR_PASSWORD@localhost:5432/outreach_test'
-bash scripts/test.sh
+bash scripts/test.sh -q
+# Authentication/RBAC tests only:
+bash scripts/test.sh -q tests/test_auth.py
+# Milestone 1 regression coverage, now using bearer authentication:
+bash scripts/test.sh -q tests/test_api.py tests/test_tenant_isolation.py
 ```
 
-The helper requires a database name ending in `_test`, applies migrations to that database, then runs Pytest. Coverage includes both hospitals' reads and lists for all clinical entities, cross-tenant writes, direct database constraint enforcement, platform restrictions, tenant-header spoofing, disabled/inactive identities, pagination, validation, and redacted database errors.
-
-Other checks:
+The helper checks the `_test` database suffix, applies migrations there, and runs Pytest. Tests generate an isolated signing key and use the actual token-validation dependency, not an authorization bypass. The original development-header tests are adapted to assert its removal and secure key configuration; existing tenant/data behavior remains covered.
 
 ```bash
 cd backend
@@ -153,11 +190,14 @@ uv run ruff format --check app tests ../seed alembic
 cd ../frontend
 npm run typecheck
 npm run build
-npm run start
 ```
 
-## Milestone boundary
+With both seeded applications running, verify the real HTTP/cookie flow from `backend/`:
 
-Reserved packages are empty. Campaigns, scheduling, Redis/workers, AI/voice agents, RAG, triage, escalation, mock EHR, dashboards, telephony, audit pipelines, and observability systems are not implemented. This milestone supplies request IDs and safe operational errors, not a clinical audit system.
+```bash
+uv run python ../scripts/smoke_auth.py
+```
 
-See [verification results](docs/verification.md) for checks performed in the development environment and the Docker runtime limitation.
+This checks all seven demo logins, tenant and platform boundaries, session-cookie attributes, same-origin enforcement, and logout. It expects local HTTP cookies (`SESSION_COOKIE_SECURE=false`).
+
+[Verification results](docs/verification.md) record actual executed checks. Refresh tokens, MFA, password reset/invitations, login throttling, server-side logout revocation, and production deployment hardening remain outside this prototype milestone. No later clinical workflows or dashboards were added.

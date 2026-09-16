@@ -24,6 +24,8 @@ def register_error_handlers(app: FastAPI) -> None:
         request.state.request_id = str(uuid4())
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
+        if request.url.path.startswith("/api/v1/"):
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     def response(request: Request, status: int, code: str, message: str) -> JSONResponse:
@@ -37,7 +39,10 @@ def register_error_handlers(app: FastAPI) -> None:
                     "request_id": identifier,
                 }
             },
-            headers={"X-Request-ID": identifier},
+            headers={
+                "X-Request-ID": identifier,
+                **({"WWW-Authenticate": "Bearer"} if status == 401 else {}),
+            },
         )
 
     @app.exception_handler(APIError)

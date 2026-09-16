@@ -7,7 +7,6 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
-    EmailStr,
     Field,
     field_validator,
     model_validator,
@@ -49,22 +48,13 @@ class HospitalResponse(HospitalCreate, Output):
     updated_at: datetime
 
 
-class UserCreate(Input):
-    hospital_id: UUID | None = None
-    email: EmailStr = Field(max_length=254)
-    full_name: str = Field(min_length=1, max_length=200)
-    role: Role
-    is_active: bool = True
-
-    @model_validator(mode="after")
-    def role_tenant(self) -> "UserCreate":
-        if (self.role == Role.PLATFORM_ADMIN) != (self.hospital_id is None):
-            raise ValueError("Hospital users require a tenant; platform users have no tenant")
-        return self
-
-
-class UserResponse(UserCreate, Output):
+class UserResponse(Output):
     id: UUID
+    hospital_id: UUID | None
+    email: str
+    full_name: str
+    role: Role
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

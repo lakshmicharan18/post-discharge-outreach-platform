@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,14 +10,15 @@ class Settings(BaseSettings):
 
     database_url: str
     environment: Literal["development", "test", "production"] = "development"
-    enable_dev_auth: bool = False
+    jwt_secret: SecretStr
+    jwt_access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
 
     @model_validator(mode="after")
     def validate_security(self) -> "Settings":
         if not self.database_url.startswith("postgresql+psycopg://"):
             raise ValueError("DATABASE_URL must use postgresql+psycopg://")
-        if self.environment == "production" and self.enable_dev_auth:
-            raise ValueError("Development authentication cannot be enabled in production")
+        if len(self.jwt_secret.get_secret_value().encode()) < 32:
+            raise ValueError("JWT_SECRET must contain at least 32 bytes")
         return self
 
 
