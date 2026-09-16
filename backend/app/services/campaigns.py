@@ -1,13 +1,13 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import RequestContext
 from app.core.errors import APIError
 from app.models.campaigns import Campaign, CampaignStatus
-from app.models.entities import Discharge, Role
+from app.models.entities import Role
 from app.models.healthcare import HospitalConfiguration
 from app.repositories.campaigns import CampaignRepository
 from app.schemas.campaigns import (
@@ -17,6 +17,7 @@ from app.schemas.campaigns import (
     CampaignUpdate,
 )
 from app.services.audit import add_audit_event
+from app.services.eligibility import EligibilityService
 
 MUTATION_ROLES = (Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
 TRANSITIONS = {
@@ -54,8 +55,10 @@ class CampaignService:
     async def create(self, payload: CampaignCreate) -> Campaign:
         self.context.require_roles(*MUTATION_ROLES)
         try:
+            values = payload.model_dump()
+            values["eligibility_criteria"] = payload.eligibility_criteria.model_dump(mode="json")
             campaign = await self.repository.create(
-                {**payload.model_dump(), "created_by_user_id": self.context.user_id}
+                {**values, "created_by_user_id": self.context.user_id}
             )
             await add_audit_event(
                 self.session,
@@ -85,6 +88,8 @@ class CampaignService:
         if campaign.status is not CampaignStatus.DRAFT:
             raise APIError(409, "campaign_not_editable", "Only draft campaigns can be updated")
         values = payload.model_dump(exclude_unset=True)
+        if "eligibility_criteria" in values:
+            values["eligibility_criteria"] = payload.eligibility_criteria.model_dump(mode="json")
         try:
             for field, value in values.items():
                 setattr(campaign, field, value)
@@ -156,29 +161,10 @@ class CampaignService:
 
     async def estimate(self, campaign_id: UUID) -> CampaignEstimateResponse:
         campaign = await self.repository.get(campaign_id)
-        if campaign.clinical_follow_up_hours is None or campaign.max_retries is None:
-            raise APIError(409, "campaign_not_configured", "Campaign configuration is incomplete")
-        now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(hours=campaign.clinical_follow_up_hours)
-        candidates = await self.session.scalar(
-            select(func.count())
-            .select_from(Discharge)
-            .where(
-                Discharge.hospital_id == self.hospital_id,
-                Discharge.status == "PENDING",
-                Discharge.communication_eligible.is_(True),
-                Discharge.discharge_at >= cutoff,
-                Discharge.follow_up_deadline >= now,
-            )
-        )
-        count = int(candidates or 0)
-        return CampaignEstimateResponse(
-            campaign_id=campaign.id,
-            preliminary_candidate_count=count,
-            estimated_outreach_attempts=count * (campaign.max_retries + 1),
-        )
+        return await EligibilityService(self.session, self.context).estimate(campaign)
 
     async def _validate_activation(self, campaign: Campaign) -> None:
+        EligibilityService._criteria(campaign)
         required = (
             campaign.clinical_follow_up_hours,
             campaign.calling_window_start,

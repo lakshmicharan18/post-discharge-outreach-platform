@@ -200,6 +200,8 @@ async def test_preliminary_estimate_uses_scoped_pending_discharges(client):
         f"/api/v1/campaigns/{campaign['id']}/estimate", headers=auth_headers(12)
     )
     assert response.status_code == 200
-    assert response.json()["preliminary_candidate_count"] == 1
+    assert response.json()["total_evaluated"] == 1
+    assert response.json()["eligible_patients"] == 1
+    assert response.json()["ineligible_patients"] == 0
     assert response.json()["estimated_outreach_attempts"] == 3
-    assert response.json()["eligibility_evaluation"] == "PENDING_MILESTONE_4B"
+    assert response.json()["by_risk_level"] == {"UNKNOWN": 1}

@@ -1,5 +1,5 @@
 from datetime import datetime, time
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
@@ -8,6 +8,31 @@ from app.models.campaigns import CampaignStatus
 from app.schemas.entities import Input, Output
 
 CampaignName = Annotated[str, Field(min_length=1, max_length=200)]
+ConditionCode = Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class EligibilityCriteria(Input):
+    """Small, explicit criteria set; this is deliberately not a general query language."""
+
+    risk_levels: list[Literal["LOW", "MEDIUM", "HIGH", "UNKNOWN"]] = Field(
+        default_factory=list, max_length=4
+    )
+    care_settings: list[Literal["INPATIENT", "OUTPATIENT", "EMERGENCY"]] = Field(
+        default_factory=list, max_length=3
+    )
+    discharge_after: AwareDatetime | None = None
+    discharge_before: AwareDatetime | None = None
+    condition_codes: list[ConditionCode] = Field(default_factory=list, max_length=50)
+    discharge_status: Literal["PENDING"] | None = None
+    communication_eligible: Literal[True] | None = None
+    required_communication_preferences: dict[str, bool] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def valid_discharge_range(self) -> "EligibilityCriteria":
+        if self.discharge_after and self.discharge_before:
+            if self.discharge_before < self.discharge_after:
+                raise ValueError("Discharge range end must follow start")
+        return self
 
 
 class CampaignFields(Input):
@@ -21,7 +46,7 @@ class CampaignFields(Input):
     max_retries: int | None = Field(default=None, ge=0, le=20)
     outbound_capacity: int | None = Field(default=None, ge=1, le=1000)
     escalation_configuration: dict = Field(default_factory=dict)
-    eligibility_criteria: dict = Field(default_factory=dict)
+    eligibility_criteria: EligibilityCriteria = Field(default_factory=EligibilityCriteria)
 
     @model_validator(mode="after")
     def valid_dates_and_window(self) -> "CampaignFields":
@@ -62,6 +87,9 @@ class CampaignScheduleRequest(Input):
 
 class CampaignEstimateResponse(Output):
     campaign_id: UUID
-    preliminary_candidate_count: int
+    total_evaluated: int
+    eligible_patients: int
+    ineligible_patients: int
     estimated_outreach_attempts: int
-    eligibility_evaluation: str = "PENDING_MILESTONE_4B"
+    by_risk_level: dict[str, int]
+    by_ineligibility_reason: dict[str, int]

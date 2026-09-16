@@ -13,8 +13,10 @@ from app.schemas.campaigns import (
     CampaignScheduleRequest,
     CampaignUpdate,
 )
+from app.schemas.eligibility import EligibilityPage, PatientEligibilityResponse
 from app.schemas.entities import ErrorResponse
 from app.services.campaigns import CampaignService
+from app.services.eligibility import EligibilityService
 
 router = APIRouter(
     prefix="/api/v1/campaigns",
@@ -51,7 +53,32 @@ async def update_campaign(
 
 @router.get("/{campaign_id}/estimate", response_model=CampaignEstimateResponse)
 async def campaign_estimate(campaign_id: UUID, session: Session, context: Context):
-    return await CampaignService(session, context).estimate(campaign_id)
+    campaign = await CampaignService(session, context).get(campaign_id)
+    return await EligibilityService(session, context).estimate(campaign)
+
+
+@router.get("/{campaign_id}/eligibility", response_model=EligibilityPage)
+async def campaign_eligibility(
+    campaign_id: UUID,
+    session: Session,
+    context: Context,
+    eligible: bool | None = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+):
+    campaign = await CampaignService(session, context).get(campaign_id)
+    return await EligibilityService(session, context).evaluate(
+        campaign, eligible=eligible, limit=limit, offset=offset
+    )
+
+
+@router.get("/{campaign_id}/eligibility/{patient_id}", response_model=PatientEligibilityResponse)
+async def patient_campaign_eligibility(
+    campaign_id: UUID, patient_id: UUID, session: Session, context: Context
+):
+    campaign = await CampaignService(session, context).get(campaign_id)
+    results = await EligibilityService(session, context).patient_results(campaign, patient_id)
+    return PatientEligibilityResponse(patient_id=patient_id, results=results)
 
 
 @router.post("/{campaign_id}/ready", response_model=CampaignResponse)
