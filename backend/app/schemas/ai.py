@@ -139,3 +139,25 @@ class VoiceIntakeSessionResponse(AIContract):
     status: str
     conversation_state: dict[str, Any]
     completed_at: datetime | None
+
+
+class TriageClassification(str, enum.Enum):
+    ROUTINE = "ROUTINE"
+    CONCERNING = "CONCERNING"
+    URGENT = "URGENT"
+    INSUFFICIENT_INFORMATION = "INSUFFICIENT_INFORMATION"
+
+
+class ClinicalTriageAssessment(AIContract):
+    assessment_id: UUID
+    classification: TriageClassification
+    patient_reported_findings: list[str] = Field(default_factory=list)
+    clinical_context_facts: list[str] = Field(default_factory=list)
+    protocol_references: list[dict[str, Any]] = Field(default_factory=list)
+    reasoning_summary: str = Field(max_length=1000)
+    uncertainty: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    recommended_next_action: str = Field(max_length=100)
+    confidence: float = Field(ge=0, le=1)
+    requires_human_review: bool
+    execution_metadata: dict[str, Any] = Field(default_factory=dict)
