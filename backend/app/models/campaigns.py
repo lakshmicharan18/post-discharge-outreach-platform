@@ -65,6 +65,13 @@ class ManualFollowUpStatus(str, enum.Enum):
     RESOLVED = "RESOLVED"
 
 
+class SimulationRunStatus(str, enum.Enum):
+    READY = "READY"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class Campaign(Identity, Tenant, Timestamps, Base):
     __tablename__ = "campaigns"
     __table_args__ = (
@@ -195,3 +202,28 @@ class ManualFollowUp(Identity, Tenant, Timestamps, Base):
         default=ManualFollowUpStatus.OPEN,
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SimulationRun(Identity, Tenant, Timestamps, Base):
+    __tablename__ = "simulation_runs"
+    status: Mapped[SimulationRunStatus] = mapped_column(Enum(SimulationRunStatus, name="simulation_run_status"), default=SimulationRunStatus.READY)
+    simulated_now: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    scenario_name: Mapped[str] = mapped_column(String(100))
+    step_count: Mapped[int] = mapped_column(Integer, default=0)
+    configured_capacity: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+
+
+class SimulationEvent(Identity, Tenant, Base):
+    __tablename__ = "simulation_events"
+    __table_args__ = (UniqueConstraint("simulation_run_id", "sequence_number"),)
+    simulation_run_id: Mapped[UUID] = mapped_column(ForeignKey("simulation_runs.id"), index=True)
+    sequence_number: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(100), index=True)
+    simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    outreach_task_id: Mapped[UUID | None] = mapped_column(ForeignKey("outreach_tasks.id"))
+    campaign_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"))
+    safe_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

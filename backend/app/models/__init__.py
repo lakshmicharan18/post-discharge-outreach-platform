@@ -6,6 +6,9 @@ from app.models.campaigns import (
     OutreachOutcome,
     OutreachTask,
     OutreachTaskState,
+    SimulationEvent,
+    SimulationRun,
+    SimulationRunStatus,
 )
 from app.models.entities import Base
 from app.models.healthcare import (
@@ -29,6 +32,9 @@ __all__ = [
     "OutreachAttempt",
     "OutreachOutcome",
     "ManualFollowUp",
+    "SimulationEvent",
+    "SimulationRun",
+    "SimulationRunStatus",
     "CarePlan",
     "Condition",
     "DischargeImport",
