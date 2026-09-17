@@ -217,6 +217,17 @@ class ManualFollowUp(Identity, Tenant, Timestamps, Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class StructuredCallNote(Identity, Tenant, Timestamps, Base):
+    __tablename__ = "structured_call_notes"
+    __table_args__ = (
+        Index("ix_structured_call_notes_task_created", "outreach_task_id", "created_at"),
+    )
+
+    outreach_task_id: Mapped[UUID] = mapped_column(ForeignKey("outreach_tasks.id"), index=True)
+    patient_id: Mapped[UUID] = mapped_column(ForeignKey("patients.id"), index=True)
+    note: Mapped[dict] = mapped_column(JSONB)
+
+
 class SimulationRun(Identity, Tenant, Timestamps, Base):
     __tablename__ = "simulation_runs"
     __table_args__ = (
