@@ -59,6 +59,18 @@ async def summary(run_id: UUID, session: Session, context: Context):
     return await SimulationService(session, context).summary(run_id)
 
 
+@router.get("/{run_id}/tasks")
+async def tasks(run_id: UUID, session: Session, context: Context):
+    return await SimulationService(session, context).tasks(run_id)
+
+
+@router.get("/{run_id}/events")
+async def events(
+    run_id: UUID, session: Session, context: Context, limit: int = Query(200, ge=1, le=500)
+):
+    return await SimulationService(session, context).events(run_id, limit)
+
+
 @router.get("/status")
 async def status(session: Session, context: Context):
     return run_response(await SimulationService(session, context).get_run())

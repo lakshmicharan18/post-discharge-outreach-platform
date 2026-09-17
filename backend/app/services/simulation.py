@@ -398,6 +398,49 @@ class SimulationService:
             "capacity_exceeded": False,
         }
 
+    async def tasks(self, run_id: UUID) -> list[dict]:
+        await self._run_by_id(run_id)
+        rows = await self.session.execute(
+            select(OutreachTask, Patient, Discharge)
+            .join(Patient, Patient.id == OutreachTask.patient_id)
+            .join(Discharge, Discharge.id == OutreachTask.discharge_id)
+            .where(OutreachTask.id.in_(self._scenario_task_filter()))
+            .order_by(Patient.external_patient_id)
+        )
+        return [
+            {
+                "scenario_key": patient.external_patient_id.removeprefix(SCENARIO_PREFIX),
+                "risk": discharge.risk_level,
+                "state": task.state.value,
+                "attempt_count": task.attempt_count,
+                "priority_score": task.priority_score,
+                "next_eligible_at": task.next_eligible_at,
+                "clinical_deadline": task.clinical_deadline,
+                "last_outcome": task.last_outcome,
+            }
+            for task, patient, discharge in rows
+        ]
+
+    async def events(self, run_id: UUID, limit: int = 200) -> list[dict]:
+        run = await self._run_by_id(run_id)
+        events = list(
+            await self.session.scalars(
+                select(SimulationEvent)
+                .where(SimulationEvent.simulation_run_id == run.id)
+                .order_by(SimulationEvent.sequence_number.desc())
+                .limit(limit)
+            )
+        )
+        return [
+            {
+                "sequence_number": event.sequence_number,
+                "event_type": event.event_type,
+                "simulated_at": event.simulated_at,
+                "safe_payload": event.safe_payload,
+            }
+            for event in reversed(events)
+        ]
+
     async def _fail_run(self, run_id: UUID, cycles: int, reason: str) -> dict:
         run = await self._run_by_id(run_id)
         run.status = SimulationRunStatus.FAILED
