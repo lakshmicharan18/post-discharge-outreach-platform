@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,11 @@ async def reset(session: Session, context: Context):
 @router.post("/advance-time")
 async def advance_time(session: Session, context: Context, minutes: int = Query(ge=1, le=1440)):
     return run_response(await SimulationService(session, context).advance_clock(minutes))
+
+
+@router.post("/{run_id}/step")
+async def step(run_id: UUID, session: Session, context: Context):
+    return await SimulationService(session, context).step(run_id)
 
 
 @router.get("/status")

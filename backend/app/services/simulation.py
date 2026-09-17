@@ -1,6 +1,7 @@
 """Durable deterministic-scenario setup and controllable simulation clock."""
 
 from datetime import date, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from app.models.campaigns import (
     CampaignStatus,
     ManualFollowUp,
     OutreachAttempt,
+    OutreachOutcome,
     OutreachTask,
     OutreachTaskState,
     SimulationEvent,
@@ -21,7 +23,10 @@ from app.models.campaigns import (
 from app.models.entities import Discharge, Encounter, Patient, Role
 from app.models.healthcare import HospitalConfiguration
 from app.schemas.eligibility import EligibilityResult
+from app.schemas.outreach import OutcomeRequest
+from app.services.outcomes import OutcomeService
 from app.services.priority import score_outreach_task
+from app.services.scheduler import QueueSchedulerService
 from app.services.simulation_scenario import (
     SCENARIO_CAPACITY,
     SCENARIO_NAME,
@@ -69,7 +74,7 @@ class SimulationService:
                 hospital_id=self.hospital_id,
                 name="Deterministic simulation campaign",
                 description="Synthetic fixed 25-patient demonstration.",
-                status=CampaignStatus.READY,
+                status=CampaignStatus.RUNNING,
                 start_at=start,
                 clinical_follow_up_hours=72,
                 calling_window_start=configuration.calling_window_start,
@@ -170,6 +175,137 @@ class SimulationService:
             await self.session.rollback()
             raise
 
+    async def step(self, run_id: UUID) -> dict:
+        """Execute one deterministic queue pass at the run's persisted simulated time."""
+        self.context.require_roles(*MUTATION_ROLES)
+        run = await self._run_by_id(run_id)
+        now = SimulationClock.current_time(run)
+        reserved = await QueueSchedulerService(self.session, self.context).reserve_available(
+            run.configured_capacity, now
+        )
+        event_specs: list[tuple[str, OutreachTask, dict]] = [
+            ("TASK_RESERVED", task, {}) for task in reserved
+        ]
+        outcomes_recorded = retries_scheduled = callbacks_scheduled = manual_follow_ups = (
+            completed
+        ) = 0
+        outcome_service = OutcomeService(self.session, self.context)
+        for task in reserved:
+            attempt_number = task.attempt_count + 1
+            definition = await self._definition_for_task(task)
+            outcome = OutreachOutcome(definition.outcomes[task.attempt_count])
+            await outcome_service.start(
+                task.id, now, provider_call_id=f"simulation-{run.id}-{task.id}-{attempt_number}"
+            )
+            event_specs.append(("CALL_STARTED", task, {"attempt_number": attempt_number}))
+            callback_at = (
+                now + timedelta(minutes=definition.callback_offset_minutes)
+                if outcome == OutreachOutcome.CALLBACK_REQUESTED
+                else None
+            )
+            result = await outcome_service.process(
+                task.id,
+                OutcomeRequest(
+                    outcome=outcome,
+                    idempotency_key=f"simulation-{run.id}-{task.id}-{attempt_number}",
+                    callback_at=callback_at,
+                    partial_context=definition.dropped_partial_context,
+                ),
+                now,
+            )
+            outcomes_recorded += 1
+            event_specs.append(
+                (
+                    "OUTCOME_RECORDED",
+                    result,
+                    {"outcome": outcome.value, "attempt_number": attempt_number},
+                )
+            )
+            if result.state == OutreachTaskState.RETRY_SCHEDULED:
+                retries_scheduled += 1
+                event_specs.append(("RETRY_SCHEDULED", result, {}))
+            elif result.state == OutreachTaskState.CALLBACK_SCHEDULED:
+                callbacks_scheduled += 1
+                event_specs.append(("CALLBACK_SCHEDULED", result, {}))
+            elif result.state == OutreachTaskState.MANUAL_FOLLOW_UP:
+                manual_follow_ups += 1
+                event_specs.append(("MANUAL_FOLLOW_UP", result, {}))
+            elif result.state == OutreachTaskState.COMPLETED:
+                completed += 1
+                event_specs.append(("TASK_COMPLETED", result, {}))
+        status = await QueueSchedulerService(self.session, self.context).status(now)
+        run.step_count += 1
+        event_specs.append(
+            (
+                "STEP_COMPLETED",
+                None,
+                {"reserved_count": len(reserved), "outcomes_recorded": outcomes_recorded},
+            )
+        )
+        await self._append_events(run, now, event_specs)
+        await self.session.commit()
+        return {
+            "simulated_now": now,
+            "reserved_count": len(reserved),
+            "calls_started": len(reserved),
+            "outcomes_recorded": outcomes_recorded,
+            "retries_scheduled": retries_scheduled,
+            "callbacks_scheduled": callbacks_scheduled,
+            "manual_follow_ups_created": manual_follow_ups,
+            "completed_count": completed,
+            "active_count": status.active_reserved_count,
+            "pending_count": status.pending_count,
+        }
+
+    async def _run_by_id(self, run_id: UUID) -> SimulationRun:
+        run = await self.session.scalar(
+            select(SimulationRun).where(
+                SimulationRun.id == run_id, SimulationRun.hospital_id == self.hospital_id
+            )
+        )
+        if run is None:
+            raise APIError(404, "not_found", "Simulation run not found")
+        return run
+
+    async def _definition_for_task(self, task: OutreachTask):
+        patient = await self.session.scalar(
+            select(Patient).where(
+                Patient.id == task.patient_id, Patient.hospital_id == self.hospital_id
+            )
+        )
+        if patient is None or not patient.external_patient_id.startswith(SCENARIO_PREFIX):
+            raise APIError(409, "simulation_task_required", "Task is not part of the scenario")
+        scenario_key = patient.external_patient_id.removeprefix(SCENARIO_PREFIX)
+        for definition in SCENARIO_PATIENTS:
+            if definition.scenario_key == scenario_key:
+                return definition
+        raise APIError(409, "simulation_definition_missing", "Scenario definition is unavailable")
+
+    async def _append_events(self, run, simulated_at, specs) -> None:
+        sequence = (
+            await self.session.scalar(
+                select(SimulationEvent.sequence_number)
+                .where(SimulationEvent.simulation_run_id == run.id)
+                .order_by(SimulationEvent.sequence_number.desc())
+                .limit(1)
+            )
+            or 0
+        )
+        for event_type, task, payload in specs:
+            sequence += 1
+            self.session.add(
+                SimulationEvent(
+                    hospital_id=self.hospital_id,
+                    simulation_run_id=run.id,
+                    sequence_number=sequence,
+                    event_type=event_type,
+                    simulated_at=simulated_at,
+                    outreach_task_id=None if task is None else task.id,
+                    campaign_id=None if task is None else task.campaign_id,
+                    safe_payload=payload,
+                )
+            )
+
     async def _create_scenario_task(
         self, campaign, definition, index: int, start: datetime
     ) -> None:
@@ -244,6 +380,14 @@ class SimulationService:
             Patient.hospital_id == self.hospital_id,
             Patient.external_patient_id.like(f"{SCENARIO_PREFIX}%"),
         )
+        run_ids = select(SimulationRun.id).where(
+            SimulationRun.hospital_id == self.hospital_id,
+            SimulationRun.scenario_name == SCENARIO_NAME,
+        )
+        await self.session.execute(
+            delete(SimulationEvent).where(SimulationEvent.simulation_run_id.in_(run_ids))
+        )
+        await self.session.execute(delete(SimulationRun).where(SimulationRun.id.in_(run_ids)))
         task_ids = select(OutreachTask.id).where(OutreachTask.patient_id.in_(patient_ids))
         await self.session.execute(
             delete(ManualFollowUp).where(ManualFollowUp.outreach_task_id.in_(task_ids))
@@ -254,14 +398,6 @@ class SimulationService:
         await self.session.execute(
             delete(OutreachTask).where(OutreachTask.patient_id.in_(patient_ids))
         )
-        run_ids = select(SimulationRun.id).where(
-            SimulationRun.hospital_id == self.hospital_id,
-            SimulationRun.scenario_name == SCENARIO_NAME,
-        )
-        await self.session.execute(
-            delete(SimulationEvent).where(SimulationEvent.simulation_run_id.in_(run_ids))
-        )
-        await self.session.execute(delete(SimulationRun).where(SimulationRun.id.in_(run_ids)))
         await self.session.execute(
             delete(Campaign).where(
                 Campaign.hospital_id == self.hospital_id,
