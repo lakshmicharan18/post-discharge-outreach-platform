@@ -10,6 +10,7 @@ from app.api.outreach import router as outreach_router
 from app.api.queue import router as queue_router
 from app.api.routes import router
 from app.api.simulation import router as simulation_router
+from app.api.triage import router as triage_router
 from app.api.voice_intake import router as voice_intake_router
 from app.core.database import engine
 from app.core.errors import register_error_handlers
@@ -31,5 +32,6 @@ app.include_router(knowledge_router)
 app.include_router(outreach_router)
 app.include_router(queue_router)
 app.include_router(simulation_router)
+app.include_router(triage_router)
 app.include_router(voice_intake_router)
 app.include_router(campaigns_router)

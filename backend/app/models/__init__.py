@@ -24,12 +24,14 @@ from app.models.healthcare import (
     Procedure,
 )
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from app.models.triage import ClinicalTriageRecord
 
 __all__ = [
     "AuditEvent",
     "Base",
     "Campaign",
     "CampaignStatus",
+    "ClinicalTriageRecord",
     "OutreachTask",
     "OutreachTaskState",
     "OutreachAttempt",
