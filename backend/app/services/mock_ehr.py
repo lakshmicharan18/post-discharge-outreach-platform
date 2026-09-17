@@ -25,9 +25,12 @@ class MockEHRClient(Protocol):
 class LocalMockEHRClient:
     """Tenant-scoped local persistence; never calls an external EHR."""
 
-    def __init__(self, session: AsyncSession, context: RequestContext) -> None:
+    def __init__(
+        self, session: AsyncSession, context: RequestContext, *, fail_writes: bool = False
+    ) -> None:
         self.session, self.context = session, context
         self.hospital_id = context.require_clinical_tenant()
+        self.fail_writes = fail_writes
 
     async def write_outreach_note(self, task_id: UUID, reference_id: UUID, payload: dict):
         return await self._write("OUTREACH_NOTE", task_id, reference_id, payload)
@@ -55,8 +58,9 @@ class LocalMockEHRClient:
             operation_type=operation_type,
             idempotency_key=key,
             safe_payload=payload,
-            status="SUCCEEDED",
-            completed_at=datetime.now(timezone.utc),
+            status="FAILED" if self.fail_writes else "SUCCEEDED",
+            completed_at=None if self.fail_writes else datetime.now(timezone.utc),
+            error="deterministic mock EHR failure" if self.fail_writes else None,
         )
         self.session.add(operation)
         await self.session.flush()
@@ -64,11 +68,33 @@ class LocalMockEHRClient:
             self.session,
             self.context,
             self.hospital_id,
-            "EHR_WRITE_SUCCEEDED",
+            "EHR_WRITE_FAILED" if self.fail_writes else "EHR_WRITE_SUCCEEDED",
             "EHROperationRecord",
             operation.id,
         )
         await self.session.commit()
+        return operation
+
+    async def retry(self, operation_id: UUID) -> EHROperationRecord:
+        """Retry a local failed operation without changing its idempotency key."""
+        operation = await self.get(operation_id)
+        if operation.status == "SUCCEEDED":
+            return operation
+        if self.fail_writes:
+            return operation
+        operation.status = "SUCCEEDED"
+        operation.error = None
+        operation.completed_at = datetime.now(timezone.utc)
+        await add_audit_event(
+            self.session,
+            self.context,
+            self.hospital_id,
+            "EHR_WRITE_RETRIED",
+            "EHROperationRecord",
+            operation.id,
+        )
+        await self.session.commit()
+        await self.session.refresh(operation)
         return operation
 
     async def get(self, operation_id: UUID) -> EHROperationRecord:
