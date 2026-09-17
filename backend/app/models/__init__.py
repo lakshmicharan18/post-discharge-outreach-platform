@@ -26,6 +26,7 @@ from app.models.healthcare import (
     Procedure,
 )
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from app.models.notifications import Notification, NotificationSeverity, NotificationStatus
 from app.models.triage import ClinicalTriageRecord, EscalationCase
 from app.models.workflow import WorkflowEvent, WorkflowEventStatus
 
@@ -57,6 +58,9 @@ __all__ = [
     "KnowledgeChunk",
     "KnowledgeDocument",
     "Medication",
+    "Notification",
+    "NotificationSeverity",
+    "NotificationStatus",
     "Observation",
     "Procedure",
 ]

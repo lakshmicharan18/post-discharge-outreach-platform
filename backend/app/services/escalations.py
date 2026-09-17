@@ -11,6 +11,7 @@ from app.models.entities import Role
 from app.models.triage import EscalationCase, EscalationDecisionRecord
 from app.services.audit import add_audit_event
 from app.services.mock_ehr import LocalMockEHRClient
+from app.services.workflows import WorkflowService
 
 
 class EscalationCaseService:
@@ -27,6 +28,7 @@ class EscalationCaseService:
             select(EscalationCase).where(EscalationCase.escalation_decision_id == decision.id)
         )
         if existing is not None:
+            await self._enqueue_urgent_notification(existing)
             return existing
         case = EscalationCase(
             hospital_id=self.hospital_id,
@@ -46,6 +48,7 @@ class EscalationCaseService:
         )
         await self.session.commit()
         await self.session.refresh(case)
+        await self._enqueue_urgent_notification(case)
         task_id = await self.session.scalar(
             select(VoiceIntakeSession.outreach_task_id).where(
                 VoiceIntakeSession.id == case.intake_session_id
@@ -57,6 +60,16 @@ class EscalationCaseService:
             {"case_id": str(case.id), "resolution": case.resolution},
         )
         return case
+
+    async def _enqueue_urgent_notification(self, case: EscalationCase) -> None:
+        if case.priority != "URGENT":
+            return
+        await WorkflowService(self.session).create(
+            self.context,
+            "SEND_NOTIFICATION",
+            {"escalation_id": str(case.id)},
+            f"send-notification:{case.id}",
+        )
 
     async def list_open(self) -> list[EscalationCase]:
         self.context.require_roles(
