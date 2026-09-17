@@ -161,3 +161,21 @@ class ClinicalTriageAssessment(AIContract):
     confidence: float = Field(ge=0, le=1)
     requires_human_review: bool
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgreementStatus(str, enum.Enum):
+    CONSENSUS = "CONSENSUS"
+    MAJORITY = "MAJORITY"
+    DISAGREEMENT = "DISAGREEMENT"
+
+
+class EscalationDecision(AIContract):
+    decision_id: UUID
+    intake_session_id: UUID
+    assessment_ids: list[UUID] = Field(min_length=3, max_length=3)
+    final_classification: TriageClassification
+    agreement_status: AgreementStatus
+    requires_human_review: bool
+    disagreement_reason: str | None = None
+    recommended_action: str
+    execution_metadata: dict[str, Any] = Field(default_factory=dict)

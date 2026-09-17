@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.campaigns import router as campaigns_router
+from app.api.escalation import router as escalation_router
 from app.api.healthcare import router as healthcare_router
 from app.api.knowledge import router as knowledge_router
 from app.api.outreach import router as outreach_router
@@ -35,3 +36,4 @@ app.include_router(simulation_router)
 app.include_router(triage_router)
 app.include_router(voice_intake_router)
 app.include_router(campaigns_router)
+app.include_router(escalation_router)
