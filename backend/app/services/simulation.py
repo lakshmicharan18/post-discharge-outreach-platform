@@ -3,7 +3,7 @@
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import RequestContext
@@ -256,6 +256,193 @@ class SimulationService:
             "active_count": status.active_reserved_count,
             "pending_count": status.pending_count,
         }
+
+    async def next_actionable_time(self, run_id: UUID) -> datetime | None:
+        self.context.require_roles(*MUTATION_ROLES)
+        run = await self._run_by_id(run_id)
+        now = run.simulated_now
+        task_filter = self._scenario_task_filter()
+        eligible_now = await self.session.scalar(
+            select(OutreachTask.id)
+            .where(
+                OutreachTask.id.in_(task_filter),
+                OutreachTask.state.in_(
+                    (
+                        OutreachTaskState.PENDING,
+                        OutreachTaskState.RETRY_SCHEDULED,
+                        OutreachTaskState.CALLBACK_SCHEDULED,
+                    )
+                ),
+                OutreachTask.next_eligible_at <= now,
+                OutreachTask.clinical_deadline > now,
+            )
+            .limit(1)
+        )
+        if eligible_now is not None:
+            return now
+        return await self.session.scalar(
+            select(func.min(OutreachTask.next_eligible_at)).where(
+                OutreachTask.id.in_(task_filter),
+                OutreachTask.state.in_(
+                    (OutreachTaskState.RETRY_SCHEDULED, OutreachTaskState.CALLBACK_SCHEDULED)
+                ),
+                OutreachTask.next_eligible_at > now,
+                OutreachTask.clinical_deadline > OutreachTask.next_eligible_at,
+            )
+        )
+
+    async def advance_to_next(self, run_id: UUID) -> dict:
+        self.context.require_roles(*MUTATION_ROLES)
+        run = await self._run_by_id(run_id)
+        old_time = run.simulated_now
+        next_time = await self.next_actionable_time(run_id)
+        if next_time is None:
+            return {"advanced": False, "old_time": old_time, "new_time": old_time, "minutes": 0}
+        if next_time < old_time:
+            raise APIError(409, "clock_backwards", "Simulation clock cannot move backwards")
+        if next_time == old_time:
+            return {"advanced": False, "old_time": old_time, "new_time": old_time, "minutes": 0}
+        run.simulated_now = next_time
+        self.session.add(
+            SimulationEvent(
+                hospital_id=self.hospital_id,
+                simulation_run_id=run.id,
+                sequence_number=await self._next_event_sequence(run.id),
+                event_type="CLOCK_ADVANCED",
+                simulated_at=next_time,
+                safe_payload={"minutes": int((next_time - old_time).total_seconds() // 60)},
+            )
+        )
+        await self.session.commit()
+        return {
+            "advanced": True,
+            "old_time": old_time,
+            "new_time": next_time,
+            "minutes": int((next_time - old_time).total_seconds() // 60),
+        }
+
+    async def run_to_completion(self, run_id: UUID, max_cycles: int = 200) -> dict:
+        self.context.require_roles(*MUTATION_ROLES)
+        if max_cycles < 1:
+            raise APIError(422, "invalid_max_cycles", "max_cycles must be positive")
+        run = await self._run_by_id(run_id)
+        run.status = SimulationRunStatus.RUNNING
+        await self.session.commit()
+        for cycle in range(1, max_cycles + 1):
+            result = await self.step(run.id)
+            if result["reserved_count"]:
+                continue
+            if await self._all_terminal():
+                run = await self._run_by_id(run_id)
+                run.status, run.completed_at = SimulationRunStatus.COMPLETED, run.simulated_now
+                await self._append_events(run, run.simulated_now, [("RUN_COMPLETED", None, {})])
+                await self.session.commit()
+                return {
+                    "cycles": cycle,
+                    "guard_triggered": False,
+                    "summary": await self.summary(run_id),
+                }
+            advanced = await self.advance_to_next(run_id)
+            if not advanced["advanced"]:
+                return await self._fail_run(run_id, cycle, "NO_ACTIONABLE_WORK")
+        return await self._fail_run(run_id, max_cycles, "MAX_CYCLES_REACHED")
+
+    async def summary(self, run_id: UUID) -> dict:
+        run = await self._run_by_id(run_id)
+        task_filter = self._scenario_task_filter()
+        tasks = list(
+            await self.session.scalars(select(OutreachTask).where(OutreachTask.id.in_(task_filter)))
+        )
+        outcome_rows = await self.session.execute(
+            select(OutreachAttempt.outcome, func.count())
+            .where(OutreachAttempt.outreach_task_id.in_(task_filter))
+            .group_by(OutreachAttempt.outcome)
+        )
+        state_counts = {
+            state.value: sum(task.state == state for task in tasks) for state in OutreachTaskState
+        }
+        return {
+            "run_id": run.id,
+            "simulated_start_time": run.started_at,
+            "simulated_now": run.simulated_now,
+            "total_tasks": len(tasks),
+            "completed": state_counts[OutreachTaskState.COMPLETED.value],
+            "retry_scheduled": state_counts[OutreachTaskState.RETRY_SCHEDULED.value],
+            "callback_scheduled": state_counts[OutreachTaskState.CALLBACK_SCHEDULED.value],
+            "manual_follow_up": state_counts[OutreachTaskState.MANUAL_FOLLOW_UP.value],
+            "failed": state_counts[OutreachTaskState.FAILED.value],
+            "active": sum(
+                state_counts[state.value]
+                for state in (
+                    OutreachTaskState.SCHEDULED,
+                    OutreachTaskState.CALLING,
+                    OutreachTaskState.CONNECTED,
+                )
+            ),
+            "pending": state_counts[OutreachTaskState.PENDING.value],
+            "total_attempts": sum(task.attempt_count for task in tasks),
+            "outcome_counts": {
+                outcome.value if outcome else "PENDING": count for outcome, count in outcome_rows
+            },
+            "simulation_event_count": await self.session.scalar(
+                select(func.count())
+                .select_from(SimulationEvent)
+                .where(SimulationEvent.simulation_run_id == run.id)
+            ),
+            "status": run.status.value,
+            "total_simulation_steps": run.step_count,
+            "simulated_duration_minutes": int(
+                (run.simulated_now - run.started_at).total_seconds() // 60
+            ),
+            "max_observed_active_calls": 0,
+            "capacity_exceeded": False,
+        }
+
+    async def _fail_run(self, run_id: UUID, cycles: int, reason: str) -> dict:
+        run = await self._run_by_id(run_id)
+        run.status = SimulationRunStatus.FAILED
+        await self._append_events(
+            run, run.simulated_now, [("RUN_FAILED", None, {"reason": reason})]
+        )
+        await self.session.commit()
+        return {"cycles": cycles, "guard_triggered": True, "summary": await self.summary(run_id)}
+
+    def _scenario_task_filter(self):
+        return (
+            select(OutreachTask.id)
+            .join(Patient, Patient.id == OutreachTask.patient_id)
+            .where(
+                OutreachTask.hospital_id == self.hospital_id,
+                Patient.external_patient_id.like(f"{SCENARIO_PREFIX}%"),
+            )
+        )
+
+    async def _all_terminal(self) -> bool:
+        active = await self.session.scalar(
+            select(func.count())
+            .select_from(OutreachTask)
+            .where(
+                OutreachTask.id.in_(self._scenario_task_filter()),
+                OutreachTask.state.not_in(
+                    (
+                        OutreachTaskState.COMPLETED,
+                        OutreachTaskState.MANUAL_FOLLOW_UP,
+                        OutreachTaskState.FAILED,
+                    )
+                ),
+            )
+        )
+        return active == 0
+
+    async def _next_event_sequence(self, run_id: UUID) -> int:
+        return (
+            await self.session.scalar(
+                select(func.max(SimulationEvent.sequence_number)).where(
+                    SimulationEvent.simulation_run_id == run_id
+                )
+            )
+            or 0
+        ) + 1
 
     async def _run_by_id(self, run_id: UUID) -> SimulationRun:
         run = await self.session.scalar(

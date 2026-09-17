@@ -42,6 +42,23 @@ async def step(run_id: UUID, session: Session, context: Context):
     return await SimulationService(session, context).step(run_id)
 
 
+@router.post("/{run_id}/advance-next")
+async def advance_next(run_id: UUID, session: Session, context: Context):
+    return await SimulationService(session, context).advance_to_next(run_id)
+
+
+@router.post("/{run_id}/run")
+async def run(
+    run_id: UUID, session: Session, context: Context, max_cycles: int = Query(200, ge=1, le=1000)
+):
+    return await SimulationService(session, context).run_to_completion(run_id, max_cycles)
+
+
+@router.get("/{run_id}/summary")
+async def summary(run_id: UUID, session: Session, context: Context):
+    return await SimulationService(session, context).summary(run_id)
+
+
 @router.get("/status")
 async def status(session: Session, context: Context):
     return run_response(await SimulationService(session, context).get_run())
