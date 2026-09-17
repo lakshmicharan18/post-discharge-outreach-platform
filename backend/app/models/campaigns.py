@@ -244,7 +244,9 @@ class SimulationEvent(Identity, Tenant, Base):
     sequence_number: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(100), index=True)
     simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    outreach_task_id: Mapped[UUID | None] = mapped_column(ForeignKey("outreach_tasks.id"), index=True)
+    outreach_task_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("outreach_tasks.id"), index=True
+    )
     campaign_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"), index=True)
     safe_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
