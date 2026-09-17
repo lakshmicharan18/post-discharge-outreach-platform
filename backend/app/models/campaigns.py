@@ -7,12 +7,14 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Text,
     Time,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -206,9 +208,19 @@ class ManualFollowUp(Identity, Tenant, Timestamps, Base):
 
 class SimulationRun(Identity, Tenant, Timestamps, Base):
     __tablename__ = "simulation_runs"
-    status: Mapped[SimulationRunStatus] = mapped_column(Enum(SimulationRunStatus, name="simulation_run_status"), default=SimulationRunStatus.READY)
-    simulated_now: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("hospital_id", "id"),
+        CheckConstraint("step_count >= 0", name="step_count"),
+        CheckConstraint("configured_capacity > 0", name="configured_capacity"),
+    )
+
+    status: Mapped[SimulationRunStatus] = mapped_column(
+        Enum(SimulationRunStatus, name="simulation_run_status"),
+        default=SimulationRunStatus.READY,
+        index=True,
+    )
     scenario_name: Mapped[str] = mapped_column(String(100))
+    simulated_now: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     step_count: Mapped[int] = mapped_column(Integer, default=0)
     configured_capacity: Mapped[int] = mapped_column(Integer)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -218,12 +230,23 @@ class SimulationRun(Identity, Tenant, Timestamps, Base):
 
 class SimulationEvent(Identity, Tenant, Base):
     __tablename__ = "simulation_events"
-    __table_args__ = (UniqueConstraint("simulation_run_id", "sequence_number"),)
-    simulation_run_id: Mapped[UUID] = mapped_column(ForeignKey("simulation_runs.id"), index=True)
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["hospital_id", "simulation_run_id"],
+            ["simulation_runs.hospital_id", "simulation_runs.id"],
+        ),
+        UniqueConstraint("simulation_run_id", "sequence_number"),
+        CheckConstraint("sequence_number >= 1", name="sequence_number"),
+        Index("ix_simulation_events_run_sequence", "simulation_run_id", "sequence_number"),
+    )
+
+    simulation_run_id: Mapped[UUID] = mapped_column(index=True)
     sequence_number: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(100), index=True)
     simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    outreach_task_id: Mapped[UUID | None] = mapped_column(ForeignKey("outreach_tasks.id"))
-    campaign_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"))
+    outreach_task_id: Mapped[UUID | None] = mapped_column(ForeignKey("outreach_tasks.id"), index=True)
+    campaign_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"), index=True)
     safe_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
