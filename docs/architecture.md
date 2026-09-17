@@ -1,25 +1,60 @@
-# Tenant boundary and extension points
+# Architecture
 
-The trusted `CurrentUserContext` carries `user_id`, `hospital_id`, `role`, and `is_active`. JWT authentication resolves identity, then reloads hospital and role from stored users. Only authentication/current-user resolution accesses users globally. There is no caller-controlled tenant selector. See [authentication](authentication.md) for token, session, and RBAC details.
+```text
+Discharge
+  → Campaign Eligibility
+  → Outreach Queue
+  → Voice Intake
+  → Controlled Tools / Tenant RAG
+  → Clinical Triage
+  → 3 Independent Assessments
+  → Conservative Consensus
+  → Human Escalation
+  → Mock EHR
+```
 
-ClinicalRepository requires context at construction. It rejects platform scope and missing hospital scope, filters each read by hospital, and assigns context hospital on inserts. ClinicalService checks referenced patients and encounters through the same scoped repository before writing. Service transactions roll back on failures. No clinical list-all method or admin bypass exists.
+The system uses FastAPI services over PostgreSQL/SQLAlchemy, with a Next.js
+frontend. Routes are intentionally thin: authenticated request context enters a
+tenant-scoped service, which persists durable workflow state and audit records.
 
-Database constraints provide an additional relationship boundary:
+## Workflow
 
-- `patients(hospital_id, id)` uniquely identifies a patient in its hospital.
-- `encounters(hospital_id, patient_id)` references that patient key.
-- `encounters(hospital_id, patient_id, id)` is a unique target for discharges.
-- `discharges(hospital_id, patient_id, encounter_id)` references that complete encounter key.
-- Users have a hospital exactly when their role is not PLATFORM_ADMIN.
-- Conditions, observations, medications, care plans, and procedures use composite
-  hospital/patient/encounter foreign keys and tenant-scoped external identifiers.
+Discharges are evaluated against campaign eligibility rules and create durable,
+explainable outreach tasks. The queue prioritizes due work while applying capacity
+and concurrency constraints. Workers use leases so stale reservations can be
+recovered safely.
 
-The shared database uses application-enforced row filtering, not PostgreSQL row-level security. Raw SQL/database credentials bypass read filtering, so clinical application code must use scoped repositories. Foreign keys protect relationships even when writes bypass services. Future jobs must carry explicit tenant context and reuse these boundaries.
+Voice Intake persists its staged conversation. Controlled tools retrieve only
+tenant-safe patient, task, discharge, and hospital knowledge facts. Tenant RAG is
+limited to the requesting hospital. The model has no direct database or repository
+access.
 
-Platform HospitalRepository is separate, checks PLATFORM_ADMIN, and only exposes hospital metadata. Hospital creation is a foundation operation; onboarding workflows remain deferred. Hospital admins can read/create clinical records and list/create their own hospital users. Campaign managers and clinical reviewers can read clinical records only. These checks also run in services/repositories.
+Clinical triage produces a structured assessment. Three independent passes use
+the same controlled context without receiving one another's output. The application
+then applies explicit severity ordering and conservative consensus rules: urgent
+findings are never downgraded, and material disagreement or insufficient context
+can require human review.
 
-Pydantic rejects unknown input fields and validates timezone offsets, chronological ordering, IANA hospital timezone names, status values, and basic patient fields. Database checks duplicate key chronology and enum-like constraints. Encounter/discharge workflow transitions and eligibility are future work. `communication_preferences` is a boolean preference map; no outreach consent decision is implemented.
+Human-review decisions create one durable escalation case. Completion and case
+resolution invoke the local Mock EHR abstraction, which records idempotent outreach
+notes, follow-up references, and resolution references without contacting an
+external EHR.
 
-Alembic owns schema creation. ORM defaults assign UUIDs, statuses, and initial preferences; timestamps are initialized by PostgreSQL. `updated_at` changes on SQLAlchemy updates, not arbitrary external SQL. External identifiers are unique within each hospital and may repeat across hospitals.
+## Tenant boundary and security
 
-The Next.js pages display clinical data only through the authenticated backend proxy. All data authorization remains in FastAPI services and repositories. See [healthcare data and ingestion](healthcare-data.md) for Milestone 3 boundaries. No campaign, queue, AI, telephony, or dashboard workflow is implemented in the reserved packages.
+JWT authentication reloads the active user, role, and hospital into
+`RequestContext`. Hospital scope is never accepted from client payloads. Clinical
+services filter reads and writes by this context; foreign IDs fail closed. Platform
+Admin handles platform metadata and has no unrestricted clinical access.
+
+## Reliability and auditability
+
+UUID identities, timezone-aware timestamps, PostgreSQL constraints, and service
+transactions provide durable workflow state. EHR operation records use tenant-local
+idempotency keys, so retries do not duplicate successful writes. Safe audit events
+record case creation/review/resolution and Mock EHR outcomes without unnecessary
+PHI.
+
+The deterministic simulation and safety benchmark reuse application policy paths
+to make regression behavior reproducible. They are demonstration and test tools,
+not clinical validation.
