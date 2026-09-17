@@ -10,6 +10,7 @@ from app.models.campaigns import (
     SimulationRun,
     SimulationRunStatus,
     StructuredCallNote,
+    VoiceIntakeSession,
 )
 from app.models.entities import Base
 from app.models.healthcare import (
@@ -35,6 +36,7 @@ __all__ = [
     "OutreachOutcome",
     "ManualFollowUp",
     "StructuredCallNote",
+    "VoiceIntakeSession",
     "SimulationEvent",
     "SimulationRun",
     "SimulationRunStatus",

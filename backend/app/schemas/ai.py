@@ -1,3 +1,4 @@
+import enum
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -75,3 +76,66 @@ class StructuredCallNoteInput(TaskToolInput):
 class KnowledgeSearchToolInput(AIContract):
     query: str = Field(min_length=1, max_length=1000)
     top_k: int = Field(default=5, ge=1, le=10)
+
+
+class ConversationStage(str, enum.Enum):
+    START = "START"
+    IDENTITY_CONFIRMATION = "IDENTITY_CONFIRMATION"
+    CONSENT = "CONSENT"
+    GENERAL_RECOVERY = "GENERAL_RECOVERY"
+    SYMPTOMS = "SYMPTOMS"
+    MEDICATION_CONCERNS = "MEDICATION_CONCERNS"
+    FOLLOW_UP = "FOLLOW_UP"
+    PATIENT_QUESTIONS = "PATIENT_QUESTIONS"
+    CALLBACK_CONFIRMATION = "CALLBACK_CONFIRMATION"
+    COMPLETION = "COMPLETION"
+    TERMINATED = "TERMINATED"
+
+
+class IntakeToolCall(AIContract):
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class VoiceIntakeTurnOutput(AIContract):
+    assistant_message: str = Field(min_length=1, max_length=2000)
+    next_stage: ConversationStage
+    extracted_updates: dict[str, Any] = Field(default_factory=dict)
+    requested_tools: list[IntakeToolCall] = Field(default_factory=list, max_length=5)
+    uncertainty: list[str] = Field(default_factory=list, max_length=20)
+    conversation_complete: bool = False
+
+
+class VoiceIntakeConversation(AIContract):
+    session_id: UUID
+    outreach_task_id: UUID
+    stage: ConversationStage = ConversationStage.START
+    identity_status: Literal["VERIFIED", "UNVERIFIED", "NOT_ASKED"] = "NOT_ASKED"
+    consent_status: Literal["CONFIRMED", "DECLINED", "NOT_ASKED"] = "NOT_ASKED"
+    preferred_language: str | None = None
+    symptoms_reported: list[str] = Field(default_factory=list)
+    medication_concerns: list[str] = Field(default_factory=list)
+    follow_up_concerns: list[str] = Field(default_factory=list)
+    patient_questions: list[str] = Field(default_factory=list)
+    callback_requested: bool = False
+    red_flag_indicators: list[str] = Field(default_factory=list)
+    uncertainty: list[str] = Field(default_factory=list)
+    grounded_references: list[dict[str, Any]] = Field(default_factory=list)
+    completed: bool = False
+
+
+class VoiceIntakeSessionCreate(AIContract):
+    outreach_task_id: UUID
+
+
+class VoiceIntakeTurnRequest(AIContract):
+    patient_message: str = Field(min_length=1, max_length=4000)
+
+
+class VoiceIntakeSessionResponse(AIContract):
+    id: UUID
+    outreach_task_id: UUID
+    current_stage: ConversationStage
+    status: str
+    conversation_state: dict[str, Any]
+    completed_at: datetime | None

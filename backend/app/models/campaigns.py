@@ -228,6 +228,20 @@ class StructuredCallNote(Identity, Tenant, Timestamps, Base):
     note: Mapped[dict] = mapped_column(JSONB)
 
 
+class VoiceIntakeSession(Identity, Tenant, Timestamps, Base):
+    __tablename__ = "voice_intake_sessions"
+    __table_args__ = (
+        Index("ix_voice_intake_sessions_hospital_task", "hospital_id", "outreach_task_id"),
+    )
+
+    outreach_task_id: Mapped[UUID] = mapped_column(ForeignKey("outreach_tasks.id"), index=True)
+    outreach_attempt_id: Mapped[UUID | None] = mapped_column(ForeignKey("outreach_attempts.id"))
+    current_stage: Mapped[str] = mapped_column(String(50))
+    conversation_state: Mapped[dict] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(30), default="ACTIVE", index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class SimulationRun(Identity, Tenant, Timestamps, Base):
     __tablename__ = "simulation_runs"
     __table_args__ = (
