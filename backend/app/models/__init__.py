@@ -27,6 +27,7 @@ from app.models.healthcare import (
 )
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.models.triage import ClinicalTriageRecord, EscalationCase
+from app.models.workflow import WorkflowEvent, WorkflowEventStatus
 
 __all__ = [
     "AuditEvent",
@@ -44,6 +45,8 @@ __all__ = [
     "ManualFollowUp",
     "StructuredCallNote",
     "VoiceIntakeSession",
+    "WorkflowEvent",
+    "WorkflowEventStatus",
     "SimulationEvent",
     "SimulationRun",
     "SimulationRunStatus",
