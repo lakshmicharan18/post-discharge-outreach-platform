@@ -25,6 +25,12 @@ RETRYABLE = {
     OutreachOutcome.DROPPED,
     OutreachOutcome.TECHNICAL_FAILURE,
 }
+PROCESSING_LEASE = timedelta(minutes=5)
+ACTIVE_STATES = (
+    OutreachTaskState.SCHEDULED,
+    OutreachTaskState.CALLING,
+    OutreachTaskState.CONNECTED,
+)
 
 
 class OutcomeService:
@@ -32,7 +38,13 @@ class OutcomeService:
         self.session, self.context = session, context
         self.hospital_id = context.require_clinical_tenant()
 
-    async def start(self, task_id, now: datetime, provider_call_id: str | None = None):
+    async def start(
+        self,
+        task_id,
+        now: datetime,
+        provider_call_id: str | None = None,
+        worker_id: str | None = None,
+    ):
         self.context.require_roles(Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
         task = await self._locked_task(task_id)
         if task.state != OutreachTaskState.SCHEDULED:
@@ -49,6 +61,11 @@ class OutcomeService:
         )
         self.session.add(attempt)
         task.state, task.started_at = OutreachTaskState.CALLING, now
+        task.worker_id = worker_id or provider_call_id or "outreach-worker"
+        task.heartbeat_at, task.processing_lease_expires_at = now, now + PROCESSING_LEASE
+        task.reserved_at = None
+        task.reservation_token = None
+        task.reservation_expires_at = None
         await add_audit_event(
             self.session,
             self.context,
@@ -60,6 +77,45 @@ class OutcomeService:
         await self.session.commit()
         await self.session.refresh(attempt)
         return attempt
+
+    async def heartbeat(self, task_id, worker_id: str, now: datetime) -> OutreachTask:
+        self.context.require_roles(Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
+        task = await self._locked_task(task_id)
+        if task.state not in ACTIVE_STATES:
+            raise APIError(409, "invalid_transition", "Only active work can be heartbeated")
+        if task.worker_id is not None and task.worker_id != worker_id:
+            raise APIError(409, "lease_not_owned", "Work is owned by another worker")
+        if task.state == OutreachTaskState.SCHEDULED and (
+            task.reservation_expires_at is None or task.reservation_expires_at <= now
+        ):
+            raise APIError(409, "lease_expired", "Scheduled reservation has expired")
+        task.worker_id = worker_id
+        task.heartbeat_at, task.processing_lease_expires_at = now, now + PROCESSING_LEASE
+        await self.session.commit()
+        await self.session.refresh(task)
+        return task
+
+    async def recover_connected(self, task_id, now: datetime) -> OutreachTask | None:
+        """Convert a stale connected call to one durable manual follow-up."""
+        self.context.require_roles(Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
+        task = await self._locked_task(task_id)
+        if task.state != OutreachTaskState.CONNECTED:
+            return None
+        if task.processing_lease_expires_at is None or task.processing_lease_expires_at > now:
+            return None
+        await self._manual(task, "STALE_CONNECTED_WORKER_RECOVERY")
+        self._clear_work_lease(task)
+        await add_audit_event(
+            self.session,
+            self.context,
+            self.hospital_id,
+            "STALE_CONNECTED_WORKER_RECOVERED",
+            "OutreachTask",
+            task.id,
+        )
+        await self.session.commit()
+        await self.session.refresh(task)
+        return task
 
     async def process(self, task_id, payload, now: datetime) -> OutreachTask:
         self.context.require_roles(Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
@@ -170,6 +226,7 @@ class OutcomeService:
             task.id,
             {"outcome": payload.outcome.value},
         )
+        self._clear_work_lease(task)
         await self.session.commit()
         await self.session.refresh(task)
         return task
@@ -242,6 +299,15 @@ class OutcomeService:
                 task.id,
                 {"reason": reason},
             )
+
+    @staticmethod
+    def _clear_work_lease(task: OutreachTask) -> None:
+        task.worker_id = None
+        task.heartbeat_at = None
+        task.processing_lease_expires_at = None
+        task.reserved_at = None
+        task.reservation_token = None
+        task.reservation_expires_at = None
 
     @staticmethod
     def _within_windows(value: datetime, configuration, campaign) -> datetime | None:

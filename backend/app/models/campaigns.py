@@ -129,6 +129,12 @@ class OutreachTask(Identity, Tenant, Timestamps, Base):
         Index(
             "ix_outreach_tasks_hospital_state_priority", "hospital_id", "state", "priority_score"
         ),
+        Index(
+            "ix_outreach_tasks_hospital_state_processing_lease",
+            "hospital_id",
+            "state",
+            "processing_lease_expires_at",
+        ),
     )
     campaign_id: Mapped[UUID] = mapped_column(ForeignKey("campaigns.id"), index=True)
     patient_id: Mapped[UUID] = mapped_column(ForeignKey("patients.id"), index=True)
@@ -155,6 +161,11 @@ class OutreachTask(Identity, Tenant, Timestamps, Base):
     reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reservation_token: Mapped[UUID | None] = mapped_column(index=True)
     reservation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    worker_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    processing_lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
     )
 

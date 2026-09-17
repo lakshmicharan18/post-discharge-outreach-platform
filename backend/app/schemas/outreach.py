@@ -57,6 +57,17 @@ class QueueStatusResponse(BaseModel):
 
 class StartCallRequest(BaseModel):
     provider_call_id: str | None = None
+    worker_id: str | None = None
+
+
+class HeartbeatRequest(BaseModel):
+    worker_id: str
+
+
+class StaleRecoveryResponse(BaseModel):
+    scheduled_released: int
+    calling_recovered: int
+    connected_recovered: int
 
 
 class OutcomeRequest(BaseModel):

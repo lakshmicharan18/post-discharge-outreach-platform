@@ -1,18 +1,26 @@
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import RequestContext
 from app.core.errors import APIError
-from app.models.campaigns import Campaign, CampaignStatus, OutreachTask, OutreachTaskState
+from app.models.campaigns import (
+    Campaign,
+    CampaignStatus,
+    OutreachOutcome,
+    OutreachTask,
+    OutreachTaskState,
+)
 from app.models.entities import Discharge, Encounter, Role
 from app.models.healthcare import HospitalConfiguration
 from app.schemas.eligibility import EligibilityResult
 from app.schemas.outreach import QueueStatusResponse
 from app.services.audit import add_audit_event
+from app.services.outcomes import OutcomeService
 from app.services.priority import score_outreach_task
 
 ACTIVE_STATES = (
@@ -68,6 +76,94 @@ class QueueSchedulerService:
     async def reserve_next(self, now: datetime) -> OutreachTask | None:
         tasks = await self.reserve_available(1, now)
         return tasks[0] if tasks else None
+
+    async def recover_stale(self, now: datetime, limit: int = 100) -> dict[str, int]:
+        """Recover expired queue work under tenant-scoped row locks."""
+        self.context.require_roles(Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER)
+        if limit < 1:
+            raise APIError(422, "invalid_limit", "Recovery limit must be positive")
+        counts = {"scheduled_released": 0, "calling_recovered": 0, "connected_recovered": 0}
+        try:
+            scheduled = list(
+                await self.session.scalars(
+                    select(OutreachTask)
+                    .where(
+                        OutreachTask.hospital_id == self.hospital_id,
+                        OutreachTask.state == OutreachTaskState.SCHEDULED,
+                        or_(
+                            OutreachTask.reservation_expires_at <= now,
+                            OutreachTask.processing_lease_expires_at <= now,
+                        ),
+                    )
+                    .order_by(OutreachTask.reservation_expires_at, OutreachTask.id)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            for task in scheduled:
+                self._release_scheduled(task)
+                counts["scheduled_released"] += 1
+                await add_audit_event(
+                    self.session,
+                    self.context,
+                    self.hospital_id,
+                    "STALE_SCHEDULED_RESERVATION_RELEASED",
+                    "OutreachTask",
+                    task.id,
+                )
+            await self.session.flush()
+
+            calling = list(
+                await self.session.scalars(
+                    select(OutreachTask.id)
+                    .where(
+                        OutreachTask.hospital_id == self.hospital_id,
+                        OutreachTask.state == OutreachTaskState.CALLING,
+                        OutreachTask.processing_lease_expires_at <= now,
+                    )
+                    .order_by(OutreachTask.processing_lease_expires_at, OutreachTask.id)
+                    .limit(limit - sum(counts.values()))
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            outcomes = OutcomeService(self.session, self.context)
+            for task_id in calling:
+                recovered = await outcomes.process(
+                    task_id,
+                    SimpleNamespace(
+                        outcome=OutreachOutcome.TECHNICAL_FAILURE,
+                        idempotency_key=f"stale-calling-worker-recovery:{task_id}",
+                        callback_at=None,
+                        outcome_reason="STALE_CALLING_WORKER_RECOVERY",
+                        technical_error_code="STALE_CALLING_WORKER_RECOVERY",
+                        partial_context=None,
+                    ),
+                    now,
+                )
+                if recovered is not None:
+                    counts["calling_recovered"] += 1
+
+            connected = list(
+                await self.session.scalars(
+                    select(OutreachTask.id)
+                    .where(
+                        OutreachTask.hospital_id == self.hospital_id,
+                        OutreachTask.state == OutreachTaskState.CONNECTED,
+                        OutreachTask.processing_lease_expires_at <= now,
+                    )
+                    .order_by(OutreachTask.processing_lease_expires_at, OutreachTask.id)
+                    .limit(limit - sum(counts.values()))
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            for task_id in connected:
+                if await outcomes.recover_connected(task_id, now):
+                    counts["connected_recovered"] += 1
+            await self.session.commit()
+            return counts
+        except Exception:
+            await self.session.rollback()
+            raise
 
     async def status(self, now: datetime) -> QueueStatusResponse:
         configuration = await self.session.scalar(
@@ -144,6 +240,9 @@ class QueueSchedulerService:
                 reservation_token=None,
                 reservation_expires_at=None,
                 scheduled_at=None,
+                worker_id=None,
+                heartbeat_at=None,
+                processing_lease_expires_at=None,
             )
         )
 
@@ -242,5 +341,19 @@ class QueueSchedulerService:
         task.state, task.reserved_at = OutreachTaskState.SCHEDULED, now
         task.reservation_token, task.reservation_expires_at = uuid4(), now + LEASE
         task.scheduled_at = now
+        task.worker_id = None
+        task.heartbeat_at = None
+        task.processing_lease_expires_at = None
         await self.session.flush()
         return task
+
+    @staticmethod
+    def _release_scheduled(task: OutreachTask) -> None:
+        task.state = OutreachTaskState.PENDING
+        task.reserved_at = None
+        task.reservation_token = None
+        task.reservation_expires_at = None
+        task.scheduled_at = None
+        task.worker_id = None
+        task.heartbeat_at = None
+        task.processing_lease_expires_at = None

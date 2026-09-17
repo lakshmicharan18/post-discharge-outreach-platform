@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.context import RequestContext, get_context
 from app.core.database import get_session
 from app.schemas.outreach import (
+    HeartbeatRequest,
     ManualFollowUpResponse,
     OutcomeRequest,
     OutreachAttemptResponse,
@@ -36,7 +37,16 @@ async def start_call(task_id: UUID, payload: StartCallRequest, session: Session,
     from datetime import datetime, timezone
 
     return await OutcomeService(session, context).start(
-        task_id, datetime.now(timezone.utc), payload.provider_call_id
+        task_id, datetime.now(timezone.utc), payload.provider_call_id, payload.worker_id
+    )
+
+
+@router.post("/{task_id}/heartbeat", response_model=OutreachTaskResponse)
+async def heartbeat(task_id: UUID, payload: HeartbeatRequest, session: Session, context: Context):
+    from datetime import datetime, timezone
+
+    return await OutcomeService(session, context).heartbeat(
+        task_id, payload.worker_id, datetime.now(timezone.utc)
     )
 
 

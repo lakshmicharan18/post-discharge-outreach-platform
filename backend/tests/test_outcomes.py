@@ -119,6 +119,78 @@ async def test_invalid_number_and_roles_are_tenant_scoped(client, session):
     ).status_code == 403
 
 
+async def test_stale_scheduled_recovery_releases_capacity_without_creating_attempt(client, session):
+    task = await prepared_task(client, session)
+    task.reservation_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await session.flush()
+
+    recovered = await client.post("/api/v1/queue/recover-stale", headers=auth_headers(10))
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["scheduled_released"] == 1
+    await session.refresh(task)
+    assert task.state == OutreachTaskState.PENDING
+    assert task.reservation_token is None
+    assert (
+        await session.scalar(
+            select(OutreachAttempt.id).where(OutreachAttempt.outreach_task_id == task.id)
+        )
+        is None
+    )
+
+
+async def test_stale_call_recovery_is_idempotent_and_records_technical_failure(client, session):
+    task = await prepared_task(client, session)
+    await start(client, task)
+    task.processing_lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await session.flush()
+
+    recovered = await client.post("/api/v1/queue/recover-stale", headers=auth_headers(10))
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["calling_recovered"] == 1
+    await session.refresh(task)
+    assert task.state == OutreachTaskState.RETRY_SCHEDULED
+    attempts = list(
+        await session.scalars(
+            select(OutreachAttempt).where(OutreachAttempt.outreach_task_id == task.id)
+        )
+    )
+    assert len(attempts) == 1
+    assert attempts[0].outcome.value == "TECHNICAL_FAILURE"
+    assert attempts[0].technical_error_code == "STALE_CALLING_WORKER_RECOVERY"
+
+    repeated = await client.post("/api/v1/queue/recover-stale", headers=auth_headers(10))
+    assert repeated.status_code == 200 and repeated.json()["calling_recovered"] == 0
+    assert (
+        await session.scalar(
+            select(OutreachAttempt).where(OutreachAttempt.outreach_task_id == task.id)
+        )
+    ).attempt_number == 1
+
+
+async def test_stale_connected_recovery_creates_one_manual_follow_up(client, session):
+    task = await prepared_task(client, session)
+    await start(client, task)
+    task.state = OutreachTaskState.CONNECTED
+    task.processing_lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await session.flush()
+
+    recovered = await client.post("/api/v1/queue/recover-stale", headers=auth_headers(10))
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["connected_recovered"] == 1
+    await session.refresh(task)
+    assert task.state == OutreachTaskState.MANUAL_FOLLOW_UP
+    follow_ups = list(
+        await session.scalars(
+            select(ManualFollowUp).where(ManualFollowUp.outreach_task_id == task.id)
+        )
+    )
+    assert len(follow_ups) == 1
+    assert follow_ups[0].reason_code == "STALE_CONNECTED_WORKER_RECOVERY"
+
+    repeated = await client.post("/api/v1/queue/recover-stale", headers=auth_headers(10))
+    assert repeated.status_code == 200 and repeated.json()["connected_recovered"] == 0
+
+
 def test_retry_window_moves_to_next_valid_hospital_and_campaign_window():
     configuration = SimpleNamespace(
         timezone="UTC", calling_window_start=time(8), calling_window_end=time(20)
