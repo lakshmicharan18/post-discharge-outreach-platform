@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api.campaigns import router as campaigns_router
 from app.api.healthcare import router as healthcare_router
+from app.api.knowledge import router as knowledge_router
 from app.api.outreach import router as outreach_router
 from app.api.queue import router as queue_router
 from app.api.routes import router
@@ -25,6 +26,7 @@ app = FastAPI(
 register_error_handlers(app)
 app.include_router(router)
 app.include_router(healthcare_router)
+app.include_router(knowledge_router)
 app.include_router(outreach_router)
 app.include_router(queue_router)
 app.include_router(simulation_router)

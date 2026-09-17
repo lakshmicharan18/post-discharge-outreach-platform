@@ -22,6 +22,7 @@ from app.models.healthcare import (
     Observation,
     Procedure,
 )
+from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 
 __all__ = [
     "AuditEvent",
@@ -41,6 +42,8 @@ __all__ = [
     "Condition",
     "DischargeImport",
     "HospitalConfiguration",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
     "Medication",
     "Observation",
     "Procedure",

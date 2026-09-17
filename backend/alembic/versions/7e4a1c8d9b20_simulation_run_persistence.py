@@ -71,7 +71,9 @@ def upgrade() -> None:
         sa.Column("outreach_task_id", sa.Uuid(), nullable=True),
         sa.Column("campaign_id", sa.Uuid(), nullable=True),
         sa.Column("safe_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("hospital_id", sa.Uuid(), nullable=False),
         sa.CheckConstraint(
@@ -88,14 +90,20 @@ def upgrade() -> None:
         sa.UniqueConstraint("simulation_run_id", "sequence_number"),
     )
     op.create_index("ix_simulation_events_hospital_id", "simulation_events", ["hospital_id"])
-    op.create_index("ix_simulation_events_simulation_run_id", "simulation_events", ["simulation_run_id"])
+    op.create_index(
+        "ix_simulation_events_simulation_run_id", "simulation_events", ["simulation_run_id"]
+    )
     op.create_index("ix_simulation_events_event_type", "simulation_events", ["event_type"])
     op.create_index("ix_simulation_events_simulated_at", "simulation_events", ["simulated_at"])
-    op.create_index("ix_simulation_events_outreach_task_id", "simulation_events", ["outreach_task_id"])
+    op.create_index(
+        "ix_simulation_events_outreach_task_id", "simulation_events", ["outreach_task_id"]
+    )
     op.create_index("ix_simulation_events_campaign_id", "simulation_events", ["campaign_id"])
     op.create_index("ix_simulation_events_created_at", "simulation_events", ["created_at"])
     op.create_index(
-        "ix_simulation_events_run_sequence", "simulation_events", ["simulation_run_id", "sequence_number"]
+        "ix_simulation_events_run_sequence",
+        "simulation_events",
+        ["simulation_run_id", "sequence_number"],
     )
 
 

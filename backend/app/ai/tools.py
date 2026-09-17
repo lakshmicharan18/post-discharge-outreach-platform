@@ -16,6 +16,7 @@ from app.models.campaigns import OutreachOutcome, StructuredCallNote
 from app.models.healthcare import CarePlan, Medication
 from app.schemas.ai import (
     CallbackToolInput,
+    KnowledgeSearchToolInput,
     PatientToolInput,
     SafeToolError,
     StructuredCallNoteInput,
@@ -26,6 +27,7 @@ from app.schemas.ai import (
 from app.services.audit import add_audit_event
 from app.services.configuration import HospitalConfigurationService
 from app.services.healthcare import HealthcareService, PatientContextService
+from app.services.knowledge import KnowledgeService
 from app.services.outcomes import OutcomeService
 from app.services.outreach import OutreachWorkService
 
@@ -108,6 +110,9 @@ class ControlledAITools:
         self.registry.register("get_current_outreach_task", TaskToolInput, self._task)
         self.registry.register("record_structured_call_note", StructuredCallNoteInput, self._note)
         self.registry.register("request_callback", CallbackToolInput, self._callback)
+        self.registry.register(
+            "search_hospital_knowledge", KnowledgeSearchToolInput, self._knowledge_search
+        )
 
     async def _patient_context(self, payload: PatientToolInput) -> dict[str, Any]:
         context = await PatientContextService(self.session, self.context).context(
@@ -222,4 +227,11 @@ class ControlledAITools:
             "task_id": str(task.id),
             "state": task.state.value,
             "callback_at": task.callback_at.isoformat() if task.callback_at else None,
+        }
+
+    async def _knowledge_search(self, payload: KnowledgeSearchToolInput) -> dict[str, Any]:
+        return {
+            "references": await KnowledgeService(self.session, self.context).search(
+                payload.query, payload.top_k
+            )
         }
