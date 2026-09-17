@@ -12,6 +12,7 @@ from app.models.campaigns import (
     StructuredCallNote,
     VoiceIntakeSession,
 )
+from app.models.ehr import EHROperationRecord
 from app.models.entities import Base
 from app.models.healthcare import (
     AuditEvent,
@@ -32,6 +33,7 @@ __all__ = [
     "Campaign",
     "CampaignStatus",
     "ClinicalTriageRecord",
+    "EHROperationRecord",
     "EscalationCase",
     "OutreachTask",
     "OutreachTaskState",

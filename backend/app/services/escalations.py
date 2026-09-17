@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import RequestContext
 from app.core.errors import APIError
+from app.models.campaigns import VoiceIntakeSession
 from app.models.entities import Role
 from app.models.triage import EscalationCase, EscalationDecisionRecord
 from app.services.audit import add_audit_event
+from app.services.mock_ehr import LocalMockEHRClient
 
 
 class EscalationCaseService:
@@ -44,6 +46,16 @@ class EscalationCaseService:
         )
         await self.session.commit()
         await self.session.refresh(case)
+        task_id = await self.session.scalar(
+            select(VoiceIntakeSession.outreach_task_id).where(
+                VoiceIntakeSession.id == case.intake_session_id
+            )
+        )
+        await LocalMockEHRClient(self.session, self.context).record_escalation_reference(
+            task_id,
+            case.id,
+            {"case_id": str(case.id), "resolution": case.resolution},
+        )
         return case
 
     async def list_open(self) -> list[EscalationCase]:

@@ -9,6 +9,7 @@ from app.core.errors import APIError
 from app.models.campaigns import VoiceIntakeSession
 from app.models.entities import Role
 from app.schemas.ai import VoiceIntakeConversation
+from app.services.mock_ehr import LocalMockEHRClient
 from app.services.outreach import OutreachWorkService
 
 
@@ -51,6 +52,12 @@ class VoiceIntakeSessionService:
         if completed and record.status != "COMPLETED":
             record.status, record.completed_at = "COMPLETED", now
         await self.session.commit()
+        if completed:
+            await LocalMockEHRClient(self.session, self.context).write_outreach_note(
+                record.outreach_task_id,
+                record.id,
+                {"intake_session_id": str(record.id), "stage": record.current_stage},
+            )
         return record
 
     async def conversation(self, record: VoiceIntakeSession) -> VoiceIntakeConversation:

@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.models import StructuredModel
 from app.core.context import RequestContext
 from app.core.errors import APIError
+from app.models.campaigns import VoiceIntakeSession
 from app.models.triage import EscalationDecisionRecord
 from app.schemas.ai import AgreementStatus, TriageClassification
 from app.services.escalations import EscalationCaseService
+from app.services.mock_ehr import LocalMockEHRClient
 from app.services.triage import ClinicalTriageService
 
 SEVERITY = {
@@ -71,6 +73,17 @@ class ConsensusTriageService:
         await self.session.commit()
         await self.session.refresh(decision)
         await EscalationCaseService(self.session, self.context).create_for_decision(decision.id)
+        if decision.requires_human_review:
+            task_id = await self.session.scalar(
+                select(VoiceIntakeSession.outreach_task_id).where(
+                    VoiceIntakeSession.id == decision.intake_session_id
+                )
+            )
+            await LocalMockEHRClient(self.session, self.context).create_follow_up_task(
+                task_id,
+                decision.id,
+                {"decision_id": str(decision.id), "classification": decision.final_classification},
+            )
         return decision
 
     async def get(self, decision_id):
