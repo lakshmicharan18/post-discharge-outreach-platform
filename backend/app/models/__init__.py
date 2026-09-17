@@ -24,7 +24,7 @@ from app.models.healthcare import (
     Procedure,
 )
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
-from app.models.triage import ClinicalTriageRecord
+from app.models.triage import ClinicalTriageRecord, EscalationCase
 
 __all__ = [
     "AuditEvent",
@@ -32,6 +32,7 @@ __all__ = [
     "Campaign",
     "CampaignStatus",
     "ClinicalTriageRecord",
+    "EscalationCase",
     "OutreachTask",
     "OutreachTaskState",
     "OutreachAttempt",

@@ -179,3 +179,22 @@ class EscalationDecision(AIContract):
     disagreement_reason: str | None = None
     recommended_action: str
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EscalationCaseResolution(AIContract):
+    reviewer_notes: str = Field(min_length=1, max_length=2000)
+    resolution: str = Field(min_length=1, max_length=100)
+
+
+class EscalationCaseResponse(AIContract):
+    id: UUID
+    escalation_decision_id: UUID
+    intake_session_id: UUID
+    status: str
+    priority: str
+    assigned_reviewer_id: UUID | None
+    reviewer_notes: str | None
+    resolution: str | None
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: datetime | None

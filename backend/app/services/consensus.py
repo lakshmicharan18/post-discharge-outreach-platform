@@ -8,6 +8,7 @@ from app.core.context import RequestContext
 from app.core.errors import APIError
 from app.models.triage import EscalationDecisionRecord
 from app.schemas.ai import AgreementStatus, TriageClassification
+from app.services.escalations import EscalationCaseService
 from app.services.triage import ClinicalTriageService
 
 SEVERITY = {
@@ -69,6 +70,7 @@ class ConsensusTriageService:
         self.session.add(decision)
         await self.session.commit()
         await self.session.refresh(decision)
+        await EscalationCaseService(self.session, self.context).create_for_decision(decision.id)
         return decision
 
     async def get(self, decision_id):
