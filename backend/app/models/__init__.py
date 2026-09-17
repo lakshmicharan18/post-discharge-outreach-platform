@@ -1,3 +1,4 @@
+from app.models.ai import AIExecution
 from app.models.campaigns import (
     Campaign,
     CampaignStatus,
@@ -29,6 +30,7 @@ from app.models.triage import ClinicalTriageRecord, EscalationCase
 
 __all__ = [
     "AuditEvent",
+    "AIExecution",
     "Base",
     "Campaign",
     "CampaignStatus",

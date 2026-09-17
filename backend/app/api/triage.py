@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.models import DeterministicFakeModel
+from app.ai.models import configured_model
 from app.core.context import RequestContext, get_context
 from app.core.database import get_session
 from app.schemas.ai import ClinicalTriageAssessment
@@ -18,7 +18,7 @@ Context = Annotated[RequestContext, Depends(get_context)]
 
 @router.post("/assess", response_model=ClinicalTriageAssessment)
 async def assess(intake_session_id: UUID, session: Session, context: Context):
-    model = DeterministicFakeModel(
+    model = configured_model(
         {
             "assessment_id": str(uuid4()),
             "classification": "INSUFFICIENT_INFORMATION",
@@ -27,7 +27,11 @@ async def assess(intake_session_id: UUID, session: Session, context: Context):
             "confidence": 0.0,
             "requires_human_review": True,
             "execution_metadata": {"provider": "fake"},
-        }
+        },
+        session=session,
+        hospital_id=context.hospital_id,
+        purpose="triage",
+        prompt_version="triage-v1",
     )
     record = await ClinicalTriageService(session, context, model).assess(
         intake_session_id, datetime.now(timezone.utc)
@@ -37,6 +41,6 @@ async def assess(intake_session_id: UUID, session: Session, context: Context):
 
 @router.get("/{assessment_id}", response_model=ClinicalTriageAssessment)
 async def get_assessment(assessment_id: UUID, session: Session, context: Context):
-    model = DeterministicFakeModel({})
+    model = configured_model({})
     record = await ClinicalTriageService(session, context, model).get(assessment_id)
     return ClinicalTriageAssessment.model_validate(record.assessment)

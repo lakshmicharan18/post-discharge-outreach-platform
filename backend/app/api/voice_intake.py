@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.intake import VoiceIntakeAgent
-from app.ai.models import DeterministicFakeModel
+from app.ai.models import configured_model
 from app.ai.tools import ControlledAITools
 from app.core.context import RequestContext, get_context
 from app.core.database import get_session
@@ -57,8 +57,12 @@ async def turn(
         return response(record)
     agent = VoiceIntakeAgent(
         ControlledAITools(session, context),
-        DeterministicFakeModel(
-            {"assistant_message": "Thank you. Please continue.", "next_stage": "GENERAL_RECOVERY"}
+        configured_model(
+            {"assistant_message": "Thank you. Please continue.", "next_stage": "GENERAL_RECOVERY"},
+            session=session,
+            hospital_id=context.hospital_id,
+            purpose="voice_intake",
+            prompt_version="voice-intake-v1",
         ),
     )
     conversation, _ = await agent.process_turn(
@@ -86,12 +90,16 @@ async def complete(session_id: UUID, session: Session, context: Context):
         return response(record)
     agent = VoiceIntakeAgent(
         ControlledAITools(session, context),
-        DeterministicFakeModel(
+        configured_model(
             {
                 "assistant_message": "Thank you.",
                 "next_stage": "COMPLETION",
                 "conversation_complete": True,
-            }
+            },
+            session=session,
+            hospital_id=context.hospital_id,
+            purpose="voice_intake",
+            prompt_version="voice-intake-v1",
         ),
     )
     conversation, _ = await agent.process_turn(
