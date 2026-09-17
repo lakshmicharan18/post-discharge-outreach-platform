@@ -17,6 +17,8 @@ from app.core.database import SessionFactory, engine  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.models.entities import Discharge, Encounter, Hospital, Patient, Role, User  # noqa: E402
 from app.models.healthcare import HospitalConfiguration  # noqa: E402
+from app.models.knowledge import KnowledgeChunk, KnowledgeDocument  # noqa: E402
+from app.services.knowledge import chunk_text  # noqa: E402
 
 DEMO_PASSWORD = "DemoOnly-ChangeMe-2026!"
 
@@ -60,6 +62,41 @@ async def seed() -> None:
                         is_ready=True,
                     )
                 )
+            knowledge = (
+                "Hospital A protocol: follow up within 48 hours. After-hours callback contact is "
+                "A-NURSE. Symptom guidance: contact A-ESCALATION for urgent symptoms."
+                if tenant == 1
+                else "Hospital B protocol: follow up within 72 hours. After-hours callback contact is "
+                "B-NURSE. Symptom guidance: contact B-ESCALATION for urgent symptoms."
+            )
+            source_identifier = "synthetic-follow-up-guidance"
+            document = await session.scalar(
+                select(KnowledgeDocument).where(
+                    KnowledgeDocument.hospital_id == hospital.id,
+                    KnowledgeDocument.source_identifier == source_identifier,
+                    KnowledgeDocument.version == 1,
+                )
+            )
+            if document is None:
+                document = KnowledgeDocument(
+                    hospital_id=hospital.id,
+                    title=f"Hospital {'A' if tenant == 1 else 'B'} follow-up guidance",
+                    source_type="SYNTHETIC_PROTOCOL",
+                    source_identifier=source_identifier,
+                    content=knowledge,
+                )
+                session.add(document)
+                await session.flush()
+                for chunk_index, text in enumerate(chunk_text(knowledge)):
+                    session.add(
+                        KnowledgeChunk(
+                            hospital_id=hospital.id,
+                            document_id=document.id,
+                            chunk_index=chunk_index,
+                            chunk_text=text,
+                            citation_metadata={"title": document.title},
+                        )
+                    )
             for index, role in enumerate(
                 (Role.HOSPITAL_ADMIN, Role.CAMPAIGN_MANAGER, Role.CLINICAL_REVIEWER)
             ):
