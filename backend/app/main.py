@@ -1,5 +1,6 @@
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
@@ -14,14 +15,23 @@ from app.api.routes import router
 from app.api.simulation import router as simulation_router
 from app.api.triage import router as triage_router
 from app.api.voice_intake import router as voice_intake_router
-from app.core.database import engine
+from app.core.database import SessionFactory, engine
 from app.core.errors import register_error_handlers
+from app.services.workflow_runner import WorkflowEventRunner
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    yield
-    await engine.dispose()
+    worker_task = asyncio.create_task(
+        WorkflowEventRunner(SessionFactory).run_forever(), name="workflow-event-runner"
+    )
+    try:
+        yield
+    finally:
+        worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker_task
+        await engine.dispose()
 
 
 app = FastAPI(

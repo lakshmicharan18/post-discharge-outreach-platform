@@ -84,7 +84,7 @@ class PatientAIWorkflowService:
         assessments = self._independent_assessments(triage_records, assessment_ids)
         escalation = await self._escalation(decision)
         notification = await self._notification(escalation)
-        ehr_operation = await self._ehr_operation(intake)
+        ehr_operation = await self._ehr_operation(intake, decision, escalation)
         return PatientAIWorkflowResponse(
             patient=AIWorkflowPatient(
                 id=patient.id,
@@ -147,16 +147,50 @@ class PatientAIWorkflowService:
             .order_by(Notification.created_at.desc(), Notification.id.desc())
         )
 
-    async def _ehr_operation(self, intake: VoiceIntakeSession | None) -> EHROperationRecord | None:
+    async def _ehr_operation(
+        self,
+        intake: VoiceIntakeSession | None,
+        decision: EscalationDecisionRecord | None,
+        escalation: EscalationCase | None,
+    ) -> EHROperationRecord | None:
         if intake is None:
             return None
+
+        reference_ids = []
+
+        if escalation is not None:
+            reference_ids.append(escalation.id)
+
+        if decision is not None:
+            reference_ids.append(decision.id)
+
+        if reference_ids:
+            related = await self.session.scalar(
+                select(EHROperationRecord)
+                .where(
+                    EHROperationRecord.hospital_id == self.hospital_id,
+                    EHROperationRecord.outreach_task_id == intake.outreach_task_id,
+                    EHROperationRecord.reference_id.in_(reference_ids),
+                )
+                .order_by(
+                    EHROperationRecord.created_at.desc(),
+                    EHROperationRecord.id.desc(),
+                )
+            )
+
+            if related is not None:
+                return related
+
         return await self.session.scalar(
             select(EHROperationRecord)
             .where(
                 EHROperationRecord.hospital_id == self.hospital_id,
                 EHROperationRecord.outreach_task_id == intake.outreach_task_id,
             )
-            .order_by(EHROperationRecord.created_at.desc(), EHROperationRecord.id.desc())
+            .order_by(
+                EHROperationRecord.created_at.desc(),
+                EHROperationRecord.id.desc(),
+            )
         )
 
     @staticmethod
