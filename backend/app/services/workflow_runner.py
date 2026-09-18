@@ -26,7 +26,14 @@ class WorkflowEventRunner:
 
     async def run_forever(self) -> None:
         while True:
-            await self.run_once()
+            try:
+                await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Keep the worker alive after transient infrastructure failures.
+                pass
+
             await asyncio.sleep(self.poll_interval_seconds)
 
     async def run_once(self) -> bool:
