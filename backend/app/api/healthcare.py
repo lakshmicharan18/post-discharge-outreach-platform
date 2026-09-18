@@ -9,6 +9,7 @@ from app.core.database import get_session
 from app.core.errors import APIError
 from app.models.entities import Role
 from app.models.healthcare import CarePlan, Condition, Medication, Observation, Procedure
+from app.schemas.ai_workflow import PatientAIWorkflowResponse
 from app.schemas.healthcare import (
     CarePlanCreate,
     CarePlanResponse,
@@ -27,6 +28,7 @@ from app.schemas.healthcare import (
     ProcedureResponse,
     TimelineEvent,
 )
+from app.services.ai_workflow import PatientAIWorkflowService
 from app.services.configuration import HospitalConfigurationService
 from app.services.healthcare import HealthcareService, PatientContextService
 from app.services.ingestion import DischargeIngestionService, parse_csv_import
@@ -226,6 +228,17 @@ async def patient_timeline(patient_id: UUID, session: Session, context: Context)
 )
 async def patient_context(patient_id: UUID, session: Session, context: Context):
     return await PatientContextService(session, context).context(patient_id)
+
+
+@router.get(
+    "/patients/{patient_id}/ai-workflow",
+    response_model=PatientAIWorkflowResponse,
+    tags=["clinical"],
+)
+async def patient_ai_workflow(
+    patient_id: UUID, session: Session, context: Context
+) -> PatientAIWorkflowResponse:
+    return await PatientAIWorkflowService(session, context).get(patient_id)
 
 
 @router.post(
