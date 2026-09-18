@@ -9,6 +9,7 @@ from app.api.escalation import router as escalation_router
 from app.api.escalations import router as escalations_router
 from app.api.healthcare import router as healthcare_router
 from app.api.knowledge import router as knowledge_router
+from app.api.operations import router as operations_router
 from app.api.outreach import router as outreach_router
 from app.api.queue import router as queue_router
 from app.api.routes import router
@@ -41,6 +42,7 @@ register_error_handlers(app)
 app.include_router(router)
 app.include_router(healthcare_router)
 app.include_router(knowledge_router)
+app.include_router(operations_router)
 app.include_router(outreach_router)
 app.include_router(queue_router)
 app.include_router(simulation_router)
