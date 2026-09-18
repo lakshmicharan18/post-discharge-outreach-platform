@@ -86,8 +86,23 @@ async def turn(
 async def complete(session_id: UUID, session: Session, context: Context):
     service = VoiceIntakeSessionService(session, context)
     record = await service.get(session_id)
+
+    # /complete has deterministic semantics regardless of what the model returns.
     if record.status == "COMPLETED":
-        return response(record)
+        state = dict(record.conversation_state)
+        state["stage"] = "COMPLETION"
+        state["completed"] = True
+
+        return response(
+            await service.save(
+                record,
+                state,
+                "COMPLETION",
+                True,
+                datetime.now(timezone.utc),
+            )
+        )
+
     agent = VoiceIntakeAgent(
         ControlledAITools(session, context),
         configured_model(
@@ -102,14 +117,28 @@ async def complete(session_id: UUID, session: Session, context: Context):
             prompt_version="voice-intake-v1",
         ),
     )
+
     conversation, _ = await agent.process_turn(
-        context, await service.conversation(record), "Complete intake", datetime.now(timezone.utc)
+        context,
+        await service.conversation(record),
+        "Complete intake",
+        datetime.now(timezone.utc),
     )
+
+    state = conversation.model_dump(
+        mode="json",
+        exclude={"session_id", "outreach_task_id"},
+    )
+
+    # The explicit /complete endpoint always finishes the conversation.
+    state["stage"] = "COMPLETION"
+    state["completed"] = True
+
     return response(
         await service.save(
             record,
-            conversation.model_dump(mode="json", exclude={"session_id", "outreach_task_id"}),
-            conversation.stage.value,
+            state,
+            "COMPLETION",
             True,
             datetime.now(timezone.utc),
         )

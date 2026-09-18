@@ -63,7 +63,14 @@ async def test_turn_persists_state_and_completion_is_idempotent(client, session)
     completed = await client.post(
         f"/api/v1/voice-intake/sessions/{created['id']}/complete", headers=auth_headers(10)
     )
-    assert completed.status_code == 200 and completed.json()["status"] == "COMPLETED"
+    assert completed.status_code == 200
+    completed_body = completed.json()
+
+    assert completed_body["status"] == "COMPLETED"
+    assert completed_body["current_stage"] == "COMPLETION"
+    assert completed_body["conversation_state"]["stage"] == "COMPLETION"
+    assert completed_body["conversation_state"]["completed"] is True
+    assert completed_body["completed_at"] is not None
     repeated = await client.post(
         f"/api/v1/voice-intake/sessions/{created['id']}/complete", headers=auth_headers(10)
     )
