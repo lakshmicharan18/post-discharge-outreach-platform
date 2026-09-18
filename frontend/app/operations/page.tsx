@@ -110,7 +110,11 @@ export default function OperationsPage() {
           <p><strong>{summary.notifications.unread}</strong><span>Unread notifications</span></p>
           <p><strong>{summary.workflows.failed}</strong><span>Failed workflow events</span></p>
           <p><strong>{summary.ai_executions.successful} / {summary.ai_executions.failed}</strong><span>AI success / failure</span></p>
-          <p><strong>{summary.ai_executions.average_latency_ms ?? "—"}</strong><span>Average AI latency (ms)</span></p>
+          <p><strong>
+  {summary.ai_executions.average_latency_ms !== null
+    ? Math.round(summary.ai_executions.average_latency_ms)
+    : "—"}
+</strong><span>Average AI latency (ms)</span></p>
         </div>
       </section>
 
