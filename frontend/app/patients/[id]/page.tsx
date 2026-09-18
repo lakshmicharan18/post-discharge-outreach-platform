@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { Navigation } from "../../../components/navigation";
 import { api } from "../../../lib/api";
@@ -33,6 +34,7 @@ export default function PatientDetail({ params }: { params: Promise<{ id: string
     {context && <>
       <p className="eyebrow">{context.patient.external_patient_id}</p>
       <h1>{context.patient.first_name} {context.patient.last_name}</h1>
+      <p><Link href={`/patients/${id}/ai-workflow`}>View AI workflow activity</Link></p>
       <ResourceSection title="Demographics" records={[context.patient]} />
       <ResourceSection title="Encounters" records={context.encounters} />
       <ResourceSection title="Discharges" records={context.discharges} />
