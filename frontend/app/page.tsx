@@ -44,7 +44,7 @@ export default function Home() {
       <p>Role: <strong>{user.role}</strong></p>
       <p>Hospital: <strong>{user.hospital?.name ?? "Platform administration"}</strong></p>
     </section>}
-    {user && <><Navigation /><section><h2>Milestone 3</h2><p>Review hospital configuration, browse structured patient context, or import discharge data.</p></section></>}
+    {user && <><Navigation /><section><h2>Platform overview</h2><p>Review hospital configuration, browse structured patient context, or import discharge data.</p></section></>}
     <footer>Prototype · Use synthetic data only</footer>
   </main>;
 }
