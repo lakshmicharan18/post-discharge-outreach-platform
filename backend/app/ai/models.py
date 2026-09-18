@@ -85,6 +85,17 @@ class OpenAICompatibleStructuredModel:
                     raise ModelExecutionError(
                         "Provider returned invalid structured output"
                     ) from exc
+            except urllib.error.HTTPError as exc:
+                if attempt + 1 == attempts:
+                    error_type = (
+                        f"provider_http_{exc.code}"
+                        if isinstance(exc.code, int)
+                        else "provider_http_error"
+                    )
+                    await self._telemetry(
+                        False, int((perf_counter() - started) * 1000), error_type, None
+                    )
+                    raise ModelExecutionError("Provider request failed") from exc
             except urllib.error.URLError as exc:
                 if attempt + 1 == attempts:
                     await self._telemetry(
@@ -117,10 +128,16 @@ class OpenAICompatibleStructuredModel:
         await self.session.commit()
 
     async def _request(self, prompt: str, response_model: type[T]) -> tuple[str, dict | None]:
+        schema = json.dumps(response_model.model_json_schema(), separators=(",", ":"))
+        structured_instruction = (
+            "Return ONLY valid JSON with no markdown or explanation. "
+            "Conform exactly to this JSON Schema:\n"
+            f"{schema}"
+        )
         payload = json.dumps(
             {
                 "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [{"role": "user", "content": f"{prompt}\n\n{structured_instruction}"}],
                 "response_format": {"type": "json_object"},
             }
         ).encode()

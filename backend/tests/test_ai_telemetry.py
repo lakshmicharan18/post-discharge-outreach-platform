@@ -1,3 +1,4 @@
+import urllib.error
 from uuid import UUID
 
 import pytest
@@ -67,3 +68,17 @@ async def test_failure_telemetry_persists_null_usage(session, monkeypatch):
     assert row.hospital_id == UUID(int=2) and not row.success
     assert row.error_type == "invalid_structured_output"
     assert row.input_tokens is None and row.output_tokens is None
+
+
+async def test_http_error_persists_safe_provider_status(session, monkeypatch):
+    model = OpenAICompatibleStructuredModel(settings(), session, UUID(int=1), "triage", "triage-v1")
+
+    async def request(*_):
+        raise urllib.error.HTTPError("http://provider", 429, "too many requests", {}, None)
+
+    monkeypatch.setattr(model, "_request", request)
+    with pytest.raises(ModelExecutionError):
+        await model.generate("sensitive transcript", Output)
+    row = await session.scalar(select(AIExecution))
+    assert not row.success
+    assert row.error_type == "provider_http_429"
