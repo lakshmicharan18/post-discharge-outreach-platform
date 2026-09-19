@@ -43,5 +43,27 @@ export default function Login() {
       <button disabled={pending} type="submit">{pending ? "Signing in…" : "Sign in"}</button>
     </form>
     <footer>Prototype · Use synthetic data only</footer>
-  </main>;
+  
+      <section>
+        <h2>Demo access</h2>
+        <p>
+          Use the synthetic Hospital Admin account to explore the deployed application.
+        </p>
+
+        <p>
+          <strong>Email:</strong>{" "}
+          <code>hospital_admin.1@example.test</code>
+        </p>
+
+        <p>
+          <strong>Password:</strong>{" "}
+          <code>DemoOnly-ChangeMe-2026!</code>
+        </p>
+
+        <p className="muted">
+          All data in the deployed demo environment is synthetic.
+        </p>
+      </section>
+
+    </main>;
 }
